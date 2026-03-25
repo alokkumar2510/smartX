@@ -1,0 +1,20 @@
+{
+  "include": [
+    "backend",
+    "networking",
+    "server",
+    "common",
+    "."
+  ],
+  "extraPaths": [
+    ".",
+    "./backend",
+    "./networking",
+    "./server",
+    "./common"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}

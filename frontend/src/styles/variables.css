@@ -1,0 +1,48 @@
+/* ─── CSS Custom Properties (Design Tokens) ──────────── */
+
+:root {
+  /* Background Colors */
+  --bg-primary:    #020617;
+  --bg-secondary:  #0f172a;
+  --bg-tertiary:   #1e293b;
+  --bg-card:       rgba(255, 255, 255, 0.04);
+
+  /* Text Colors */
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+
+  /* Accent Colors */
+  --accent-blue:   #3b82f6;
+  --accent-purple: #a855f7;
+  --accent-cyan:   #00d4ff;
+  --accent-green:  #22c55e;
+  --accent-red:    #ef4444;
+  --accent-orange: #f97316;
+
+  /* Protocol Colors */
+  --color-tcp: #3b82f6;
+  --color-udp: #22c55e;
+  --color-hybrid: #a855f7;
+  --color-webrtc: #f97316;
+
+  /* Spacing Scale */
+  --space-xs:  0.25rem;
+  --space-sm:  0.5rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2rem;
+  --space-2xl: 3rem;
+
+  /* Border Radius */
+  --radius-sm:   0.5rem;
+  --radius-md:   0.75rem;
+  --radius-lg:   1rem;
+  --radius-xl:   1.5rem;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast:   150ms ease;
+  --transition-normal: 300ms ease;
+  --transition-slow:   500ms ease;
+}

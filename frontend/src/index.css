@@ -1,0 +1,392 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════
+   SMARTCHAT X — CYBERPUNK GLOBAL STYLES
+   Tesla Dashboard + Iron Man UI + Cyberpunk 2077
+   ═══════════════════════════════════════════════════════ */
+
+@layer base {
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Poppins', sans-serif;
+    background: #0a0a1a;
+    color: #e0e0f0;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ─── Neon Scrollbar ─────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(10, 10, 26, 0.8); }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #00f0ff, #b347ea);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #00f0ff, #ff2d78);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  }
+
+  ::selection {
+    background: rgba(0, 240, 255, 0.2);
+    color: #00f0ff;
+  }
+}
+
+@layer components {
+  /* ─── Glass Card ─────────────────────────────────────── */
+  .glass-card {
+    @apply rounded-2xl border border-white/[0.06] relative overflow-hidden;
+    background: linear-gradient(135deg, rgba(20, 20, 50, 0.8), rgba(15, 15, 42, 0.6));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      inset 0 0 40px rgba(0, 240, 255, 0.02);
+  }
+
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.3), transparent);
+  }
+
+  .glass-card:hover {
+    border-color: rgba(0, 240, 255, 0.15);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 0 60px rgba(0, 240, 255, 0.04);
+  }
+
+  /* ─── Neon Glass (stronger glow) ────────────────────── */
+  .neon-glass {
+    @apply glass-card;
+    border-color: rgba(0, 240, 255, 0.12);
+    box-shadow:
+      0 0 20px rgba(0, 240, 255, 0.08),
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 0 30px rgba(0, 240, 255, 0.03);
+  }
+
+  /* ─── Neon Button ────────────────────────────────────── */
+  .btn-neon {
+    @apply px-6 py-2.5 rounded-xl font-poppins font-semibold text-sm
+           relative overflow-hidden transition-all duration-300 ease-out;
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(179, 71, 234, 0.15));
+    border: 1px solid rgba(0, 240, 255, 0.3);
+    color: #00f0ff;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+  }
+
+  .btn-neon:hover {
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(179, 71, 234, 0.25));
+    border-color: rgba(0, 240, 255, 0.5);
+    box-shadow: 0 0 25px rgba(0, 240, 255, 0.2), 0 0 60px rgba(0, 240, 255, 0.08);
+    transform: translateY(-1px) scale(1.02);
+  }
+
+  .btn-neon:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .btn-neon::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, transparent, rgba(0, 240, 255, 0.05), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .btn-neon:hover::after { opacity: 1; }
+
+  /* ─── Neon Button Pink ───────────────────────────────── */
+  .btn-neon-pink {
+    @apply btn-neon;
+    background: linear-gradient(135deg, rgba(255, 45, 120, 0.15), rgba(179, 71, 234, 0.15));
+    border-color: rgba(255, 45, 120, 0.3);
+    color: #ff2d78;
+    text-shadow: 0 0 10px rgba(255, 45, 120, 0.3);
+  }
+  .btn-neon-pink:hover {
+    background: linear-gradient(135deg, rgba(255, 45, 120, 0.25), rgba(179, 71, 234, 0.25));
+    border-color: rgba(255, 45, 120, 0.5);
+    box-shadow: 0 0 25px rgba(255, 45, 120, 0.2);
+  }
+
+  /* ─── Neon Button Green ──────────────────────────────── */
+  .btn-neon-green {
+    @apply btn-neon;
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.15), rgba(0, 240, 255, 0.1));
+    border-color: rgba(0, 255, 136, 0.3);
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  }
+  .btn-neon-green:hover {
+    border-color: rgba(0, 255, 136, 0.5);
+    box-shadow: 0 0 25px rgba(0, 255, 136, 0.2);
+  }
+
+  /* ─── Neon Input ─────────────────────────────────────── */
+  .neon-input {
+    @apply w-full px-4 py-3 rounded-xl font-poppins text-sm
+           transition-all duration-300 outline-none;
+    background: rgba(10, 10, 30, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: #e0e0f0;
+    backdrop-filter: blur(10px);
+  }
+
+  .neon-input::placeholder { color: rgba(255, 255, 255, 0.2); }
+
+  .neon-input:focus {
+    border-color: rgba(0, 240, 255, 0.4);
+    box-shadow:
+      0 0 20px rgba(0, 240, 255, 0.1),
+      inset 0 0 20px rgba(0, 240, 255, 0.03);
+  }
+
+  /* ─── Gradient Text ──────────────────────────────────── */
+  .text-neon-gradient {
+    background: linear-gradient(135deg, #00f0ff, #b347ea, #ff2d78);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradientX 4s ease infinite;
+  }
+
+  .text-cyber-gradient {
+    background: linear-gradient(90deg, #00f0ff, #4d7cff, #b347ea);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ─── Glow Border Animation ──────────────────────────── */
+  .glow-border {
+    position: relative;
+  }
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, #00f0ff, #b347ea, #ff2d78, #00f0ff);
+    background-size: 300% 300%;
+    animation: borderFlow 4s linear infinite;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.6;
+  }
+
+  /* ─── Protocol Badge ─────────────────────────────────── */
+  .badge-tcp {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+    background: rgba(0, 240, 255, 0.12);
+    color: #00f0ff;
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+  }
+
+  .badge-udp {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+    background: rgba(255, 45, 120, 0.12);
+    color: #ff2d78;
+    border: 1px solid rgba(255, 45, 120, 0.25);
+    text-shadow: 0 0 8px rgba(255, 45, 120, 0.4);
+  }
+
+  .badge-hybrid {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+    background: rgba(179, 71, 234, 0.12);
+    color: #b347ea;
+    border: 1px solid rgba(179, 71, 234, 0.25);
+    text-shadow: 0 0 8px rgba(179, 71, 234, 0.4);
+  }
+
+  /* ─── Stats Card ─────────────────────────────────────── */
+  .stat-card {
+    @apply glass-card p-5 flex flex-col gap-2;
+  }
+  .stat-card .stat-value {
+    @apply font-orbitron text-2xl font-bold;
+    text-shadow: 0 0 20px currentColor;
+  }
+  .stat-card .stat-label {
+    @apply text-xs uppercase tracking-widest font-poppins;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* ─── Connection Pulse ───────────────────────────────── */
+  .connection-pulse {
+    @apply w-3 h-3 rounded-full relative;
+  }
+  .connection-pulse::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    animation: pulseNeon 2s ease-in-out infinite;
+    opacity: 0.5;
+  }
+
+  /* ─── Tab Button ─────────────────────────────────────── */
+  .tab-btn {
+    @apply px-4 py-2.5 text-xs font-poppins font-medium uppercase tracking-wider
+           rounded-xl transition-all duration-300 relative;
+    color: rgba(255, 255, 255, 0.35);
+  }
+  .tab-btn:hover {
+    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .tab-btn.active {
+    color: #00f0ff;
+    background: rgba(0, 240, 255, 0.08);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+  }
+}
+
+@layer utilities {
+  /* ─── Background Grid ────────────────────────────────── */
+  .bg-cyber-grid {
+    background-image:
+      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    animation: gridPulse 4s ease-in-out infinite;
+  }
+
+  /* ─── Mesh Gradient Background ───────────────────────── */
+  .bg-mesh {
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(0, 240, 255, 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(179, 71, 234, 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 80%, rgba(255, 45, 120, 0.04) 0%, transparent 50%),
+      #0a0a1a;
+  }
+
+  /* ─── Shimmer Loading ────────────────────────────────── */
+  .shimmer {
+    background: linear-gradient(90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,0.03) 50%,
+      rgba(255,255,255,0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  /* ─── Neon Color Utilities ──────────────────────────── */
+  .text-neon-cyan { color: #00f0ff; }
+  .text-neon-pink { color: #ff2d78; }
+  .text-neon-green { color: #00ff88; }
+  .bg-neon-cyan { background-color: #00f0ff; }
+  .bg-neon-pink { background-color: #ff2d78; }
+  .bg-neon-green { background-color: #00ff88; }
+
+  /* ─── Smart Reply Chips ─────────────────────────── */
+  .smart-reply-chip {
+    @apply px-3 py-1.5 rounded-xl text-[11px] font-poppins font-medium
+           cursor-pointer transition-all duration-200 select-none whitespace-nowrap;
+    background: rgba(0, 240, 255, 0.06);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    color: rgba(0, 240, 255, 0.7);
+  }
+  .smart-reply-chip:hover {
+    background: rgba(0, 240, 255, 0.12);
+    border-color: rgba(0, 240, 255, 0.35);
+    color: #00f0ff;
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
+    transform: translateY(-1px);
+  }
+
+  /* ─── Toxicity Warning ──────────────────────────── */
+  .toxicity-warn {
+    @apply px-3 py-2 rounded-xl text-[10px] font-mono;
+    background: rgba(255, 45, 120, 0.08);
+    border: 1px solid rgba(255, 45, 120, 0.2);
+    color: #ff2d78;
+  }
+
+  /* ─── Study Mode Panel ──────────────────────────── */
+  .study-panel {
+    @apply glass-card p-4;
+    border-color: rgba(0, 255, 136, 0.15);
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.05), 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  /* ─── WebRTC Badge ──────────────────────────────── */
+  .badge-webrtc {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+    background: rgba(0, 255, 136, 0.12);
+    color: #00ff88;
+    border: 1px solid rgba(0, 255, 136, 0.25);
+    text-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+  }
+
+  /* ─── Protocol AUTO Badge ───────────────────────── */
+  .badge-auto {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+    background: linear-gradient(135deg, rgba(0,240,255,0.1), rgba(255,45,120,0.1));
+    color: #b347ea;
+    border: 1px solid rgba(179, 71, 234, 0.25);
+    text-shadow: 0 0 8px rgba(179, 71, 234, 0.4);
+  }
+
+  /* ─── P2P Connection Indicator ──────────────────── */
+  .p2p-indicator {
+    @apply flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-mono;
+    background: rgba(0, 255, 136, 0.06);
+    border: 1px solid rgba(0, 255, 136, 0.15);
+    color: #00ff88;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═════════════════════════════════════════════════════════ */
+
+@keyframes gradientX {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes borderFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+
+@keyframes pulseNeon {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.3); opacity: 0.2; }
+}
+
+@keyframes gridPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

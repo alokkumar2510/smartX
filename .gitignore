@@ -1,0 +1,41 @@
+# ─── Dependencies ───────────────────────────────
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# ─── Build Output ───────────────────────────────
+frontend/dist/
+frontend/build/
+*.egg-info/
+dist/
+
+# ─── Environment Variables ──────────────────────
+.env
+.env.local
+.env.*.local
+
+# ─── IDE / Editor ───────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Logs ───────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+
+# ─── Testing ────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ─── Docker ─────────────────────────────────────
+.dockerignore
