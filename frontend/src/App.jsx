@@ -1025,9 +1025,12 @@ const ChatDashboard = () => {
   const [dmTarget, setDmTarget] = useState(null); // user object for DM panel
   const [callState, setCallState] = useState(null); // { status, username, user_id, type, offer }
   const [showAIChat, setShowAIChat] = useState(false);
+  const [localStream, setLocalStream] = useState(null); // ★ state for re-render
   const [remoteStream, setRemoteStream] = useState(null);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const callPC = useRef(null); // WebRTC peer connection for calls
   const callStream = useRef(null); // local media stream
+  const pendingICE = useRef([]); // ★ queue ICE until remote description set
 
   const ws = useRef(null);
   const chatEnd = useRef(null);
@@ -1093,7 +1096,7 @@ const ChatDashboard = () => {
       socket._statsInterval = statsInterval;
     };
 
-    socket.onmessage = (e) => {
+    socket.onmessage = async (e) => {
       try {
         const data = JSON.parse(e.data);
         switch (data.type) {
@@ -1204,7 +1207,13 @@ const ChatDashboard = () => {
           case 'call_accepted':
             stopRingtone();
             if (callPC.current && data.answer) {
-              callPC.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+              await callPC.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+              // ★ FIX: Flush any ICE candidates queued before remote description was set
+              for (const candidate of pendingICE.current) {
+                await callPC.current.addIceCandidate(new RTCIceCandidate(candidate))
+                  .catch(e => console.warn('[WebRTC] Queued ICE error:', e));
+              }
+              pendingICE.current = [];
             }
             playCallConnected();
             setCallState(prev => prev ? { ...prev, status: 'active' } : null);
@@ -1223,8 +1232,16 @@ const ChatDashboard = () => {
             break;
 
           case 'call_ice':
-            if (callPC.current && data.candidate) {
-              callPC.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+            if (data.candidate) {
+              if (callPC.current && callPC.current.remoteDescription) {
+                // ★ FIX: Only add ICE if remote description is already set
+                callPC.current.addIceCandidate(new RTCIceCandidate(data.candidate))
+                  .catch(e => console.warn('[WebRTC] ICE candidate error:', e));
+              } else {
+                // ★ FIX: Queue ICE candidates until remote description is set
+                console.log('[WebRTC] Queuing ICE candidate (no remote description yet)');
+                pendingICE.current.push(data.candidate);
+              }
             }
             break;
 
@@ -1373,26 +1390,37 @@ const ChatDashboard = () => {
   const initiateCall = async (targetUserId, targetUsername, callType = 'voice') => {
     try {
       const constraints = callType === 'video'
-        ? { audio: true, video: { width: 640, height: 480 } }
+        ? { audio: true, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } }
         : { audio: true };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       callStream.current = stream;
+      setLocalStream(stream); // ★ FIX: set state so CallModal re-renders
+      pendingICE.current = []; // ★ reset ICE queue
 
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
         ]
       });
 
       // Add local tracks
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // ★ KEY: Handle remote tracks (this is what makes audio/video work!)
-      const remote = new MediaStream();
+      // ★ FIX: Handle remote tracks — create fresh MediaStream each time to force re-render
       pc.ontrack = (event) => {
-        event.streams[0].getTracks().forEach(track => remote.addTrack(track));
-        setRemoteStream(remote);
+        console.log('[WebRTC] 📹 Remote track received:', event.track.kind);
+        setRemoteStream(prev => {
+          const ms = prev || new MediaStream();
+          // Avoid duplicate tracks
+          if (!ms.getTracks().find(t => t.id === event.track.id)) {
+            ms.addTrack(event.track);
+          }
+          // Return a new MediaStream reference to force React re-render
+          return new MediaStream(ms.getTracks());
+        });
       };
 
       pc.onicecandidate = (e) => {
@@ -1402,10 +1430,18 @@ const ChatDashboard = () => {
       };
 
       pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state:', pc.connectionState);
         if (pc.connectionState === 'connected') {
           playCallConnected();
           setCallState(prev => prev ? { ...prev, status: 'active' } : null);
+        } else if (pc.connectionState === 'failed') {
+          console.error('[WebRTC] Connection failed');
+          cleanupCall();
         }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE state:', pc.iceConnectionState);
       };
 
       callPC.current = pc;
@@ -1438,25 +1474,34 @@ const ChatDashboard = () => {
     stopRingtone();
     try {
       const constraints = callState.type === 'video'
-        ? { audio: true, video: { width: 640, height: 480 } }
+        ? { audio: true, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } }
         : { audio: true };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       callStream.current = stream;
+      setLocalStream(stream); // ★ FIX: set state so CallModal re-renders
+      pendingICE.current = []; // reset
 
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
         ]
       });
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // ★ KEY: Handle remote tracks
-      const remote = new MediaStream();
+      // ★ FIX: Handle remote tracks with fresh MediaStream
       pc.ontrack = (event) => {
-        event.streams[0].getTracks().forEach(track => remote.addTrack(track));
-        setRemoteStream(remote);
+        console.log('[WebRTC] 📹 Remote track received (callee):', event.track.kind);
+        setRemoteStream(prev => {
+          const ms = prev || new MediaStream();
+          if (!ms.getTracks().find(t => t.id === event.track.id)) {
+            ms.addTrack(event.track);
+          }
+          return new MediaStream(ms.getTracks());
+        });
       };
 
       pc.onicecandidate = (e) => {
@@ -1465,9 +1510,28 @@ const ChatDashboard = () => {
         }
       };
 
+      pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state (callee):', pc.connectionState);
+        if (pc.connectionState === 'failed') {
+          console.error('[WebRTC] Connection failed (callee)');
+          cleanupCall();
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE state (callee):', pc.iceConnectionState);
+      };
+
       callPC.current = pc;
 
       await pc.setRemoteDescription(new RTCSessionDescription(callState.offer));
+
+      // ★ FIX: Flush pending ICE candidates that arrived before setRemoteDescription
+      for (const candidate of pendingICE.current) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+      pendingICE.current = [];
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -1503,7 +1567,10 @@ const ChatDashboard = () => {
       callPC.current = null;
     }
     setCallState(null);
+    setLocalStream(null); // ★ FIX: clear state
     setRemoteStream(null);
+    setIsScreenSharing(false);
+    pendingICE.current = [];
   };
 
   const endCall = () => {
@@ -1521,6 +1588,79 @@ const ChatDashboard = () => {
     }
     playCallEnded();
     cleanupCall();
+  };
+
+  // ── Screen Mirroring / Screen Share ──────────────────
+  const toggleScreenShare = async () => {
+    if (!callPC.current || !callState) return;
+    try {
+      if (isScreenSharing) {
+        // Switch back to camera
+        const constraints = callState.type === 'video'
+          ? { audio: true, video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } }
+          : { audio: true };
+        const camStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const videoTrack = camStream.getVideoTracks()[0];
+        if (videoTrack) {
+          const sender = callPC.current.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+            await sender.replaceTrack(videoTrack);
+          }
+          // Stop old stream video tracks and replace
+          callStream.current?.getVideoTracks().forEach(t => t.stop());
+          callStream.current?.addTrack(videoTrack);
+          // Remove old video tracks from ref stream
+          const newStream = new MediaStream([
+            ...callStream.current.getAudioTracks(),
+            videoTrack,
+          ]);
+          callStream.current = newStream;
+          setLocalStream(newStream);
+        }
+        setIsScreenSharing(false);
+        console.log('[Screen] 📹 Switched back to camera');
+      } else {
+        // Screen share
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+          audio: true, // capture system audio if available
+        });
+        const screenTrack = screenStream.getVideoTracks()[0];
+        if (screenTrack) {
+          const sender = callPC.current.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+            await sender.replaceTrack(screenTrack);
+          } else {
+            // If voice call, add the screen track
+            callPC.current.addTrack(screenTrack, screenStream);
+          }
+          // Stop old camera video track
+          callStream.current?.getVideoTracks().forEach(t => t.stop());
+          const newStream = new MediaStream([
+            ...callStream.current.getAudioTracks(),
+            screenTrack,
+          ]);
+          callStream.current = newStream;
+          setLocalStream(newStream);
+          // If user stops screen share from browser UI, revert
+          screenTrack.onended = () => {
+            toggleScreenShare();
+          };
+        }
+        // Also share screen audio if available
+        const screenAudioTrack = screenStream.getAudioTracks()[0];
+        if (screenAudioTrack) {
+          callPC.current.addTrack(screenAudioTrack, screenStream);
+        }
+        setIsScreenSharing(true);
+        console.log('[Screen] 🖥️ Screen sharing started');
+      }
+    } catch (err) {
+      console.error('[Screen] Share error:', err);
+      if (err.name !== 'NotAllowedError') {
+        alert(`Screen share failed: ${err.message}`);
+      }
+    }
   };
 
   // ── Auto scroll ─────────────────────────────────────
@@ -1998,11 +2138,13 @@ const ChatDashboard = () => {
       {callState && (
         <CallModal
           callState={callState}
-          localStream={callStream.current}
+          localStream={localStream}
           remoteStream={remoteStream}
           onAccept={acceptCall}
           onReject={rejectCall}
           onEnd={endCall}
+          onToggleScreenShare={toggleScreenShare}
+          isScreenSharing={isScreenSharing}
         />
       )}
     </div>

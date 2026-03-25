@@ -1,8 +1,8 @@
-# ⚡ SmartChat X v4.0 — AI-Powered Multi-Protocol Chat System
+# ⚡ SmartChat X v5.0 — AI-Powered Multi-Protocol Chat System
 
-> Advanced TCP/UDP/WebRTC Communication with Groq LLM AI, Private Messaging, Voice Calling, and Peer-to-Peer
+> Advanced TCP/UDP/WebRTC Communication with Groq LLM AI, Private Messaging, Voice/Video Calling, Screen Mirroring, and Peer-to-Peer
 
-![Version](https://img.shields.io/badge/version-4.0.0-00f0ff?style=flat-square)
+![Version](https://img.shields.io/badge/version-5.0.0-00f0ff?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.9+-blue?style=flat-square)
 ![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square)
 
@@ -24,12 +24,25 @@
 - Click **💬** next to any online user in the sidebar to open DM panel
 - Messages are **NOT visible** in the global chat — fully private
 
-### 📞 Voice Calling
-- **WebRTC voice calls** between users (click **📞** next to any online user)
+### 📞 Voice & Video Calling
+- **WebRTC voice & video calls** between users
+- Click **📞** for voice call or **📹** for video call next to any online user
 - **Incoming call modal** with accept/reject buttons
 - **In-call timer** showing call duration
+- **HD video quality** (1280×720 preferred resolution)
+- **Multiple STUN servers** for reliable NAT traversal
+- **Proper ICE candidate queuing** — prevents dropped connections on slow networks
 - **Call end** button to hang up
-- Uses STUN server for NAT traversal
+
+### 🖥️ Screen Mirroring (NEW in v5.0)
+- **Share your screen** during any active call (voice or video)
+- Click the **🖥️** button during a call to share your screen
+- **HD screen sharing** (1920×1080 at 30fps)
+- **System audio capture** — share computer audio alongside screen
+- **One-click toggle** between camera and screen
+- **Auto-revert** — when you stop sharing from browser UI, it switches back to camera
+- Works on **PC-to-Phone** and **PC-to-PC** connections
+- **Live indicator** shows when screen sharing is active
 
 ### 🌐 Adaptive Multi-Protocol Routing
 - **AUTO Mode** — AI auto-selects TCP/UDP per message type
@@ -137,7 +150,7 @@ npm run dev -- --host
 You'll see output like:
 ```
   ➜  Local:   http://localhost:5173/
-  ➜  Network: http://10.240.237.183:5173/    ← USE THIS URL ON PHONE
+  ➜  Network: http://[IP_ADDRESS]    ← USE THIS URL ON PHONE
 ```
 
 ### Step 4: Allow through Windows Firewall (if prompted)
@@ -169,6 +182,18 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 
 > **Note:** The app auto-detects the host from the browser URL — no code changes needed! WebSocket and API connections automatically use the correct IP.
 
+### ⚠️ Video Call on Phone (Important!)
+
+When accessing over HTTP on a mobile device, the browser may block camera/microphone access. To fix this:
+
+**Chrome on Android:**
+1. Open `chrome://flags` in your phone browser
+2. Search for "Insecure origins treated as secure"
+3. Add `http://<YOUR_PC_IP>:5173` to the list
+4. Set to **Enabled** → Relaunch Chrome
+
+**Alternative**: Use **localhost** on PC — it's always treated as secure context.
+
 ---
 
 ## 🎮 How to Use
@@ -183,6 +208,22 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 2. They see an **incoming call modal** with accept/reject
 3. Once accepted, a live call starts with a timer
 4. Click the red button to end the call
+
+### 📹 Video Calling
+1. Click **📹** next to an online user in the sidebar
+2. They see an **incoming video call modal** with accept/reject
+3. Once accepted, you see their camera feed (large) and yours (small overlay)
+4. HD quality with timer overlay
+
+### 🖥️ Screen Mirroring / Screen Share
+1. Start **any active call** (voice or video)
+2. Once connected, click the **🖥️ Screen** button in the call controls
+3. Select the screen, window, or tab you want to share
+4. Your screen is now being streamed to the other user in real-time
+5. Click **🖥️** again to switch back to your camera
+6. If you stop sharing from the browser prompt, it auto-reverts to camera
+
+> **Note:** Screen sharing works best from PC → Phone (the PC shares its screen, phone views it). The phone can also share its screen if the mobile browser supports `getDisplayMedia`.
 
 ### 🤖 AI Chat (Groq)
 1. Click the **🤖** button in the header, OR type `/ai <your question>`
@@ -214,6 +255,7 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 | `/summarize` | Summarize chat history |
 | `/ai <question>` | Ask Groq AI anything |
 | `/translate <text> to <language>` | Translate text |
+| `/clear` | Clear chat messages from your view |
 
 ---
 
@@ -221,10 +263,10 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                    SMARTCHAT X v4.0                       │
+│                    SMARTCHAT X v5.0                       │
 ├──────────────────────────────────────────────────────────┤
 │  ┌────────────┐   WebSocket    ┌────────────────┐        │
-│  │  React UI  │◄──────────────►│   FastAPI v4    │        │
+│  │  React UI  │◄──────────────►│   FastAPI v5    │        │
 │  │ (Vite/5173)│   REST API     │  (Port 8000)    │        │
 │  └─────┬──────┘                └───┬────────┬───┘        │
 │        │                           │        │            │
@@ -234,7 +276,8 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 │  │ Phone/PC   │        │TCP:9000 │  │UDP:9001 │        │
 │  │ (Browser)  │        └─────────┘  └─────────┘        │
 │  └────────────┘                                          │
-│  Features: DM • Calls • AI Chat • Smart Routing          │
+│  Features: DM • Calls • Video • Screen Mirror • AI      │
+│            Smart Routing • P2P • Study Mode              │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -244,11 +287,11 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 
 | File | Purpose |
 |------|---------|
-| `backend/main.py` | FastAPI + WebSocket + AI + Calls + DMs |
+| `backend/main.py` | FastAPI + WebSocket + AI + Calls + DMs + WebRTC Signaling |
 | `backend/app/services/ai_engine.py` | Local AI (toxicity, smart replies, study) |
 | `backend/app/services/groq_ai.py` | Groq LLM integration |
-| `frontend/src/App.jsx` | Main UI + protocol routing + P2P |
-| `frontend/src/DMPanel.jsx` | Private DM panel + Call modal + AI Chat |
+| `frontend/src/App.jsx` | Main UI + protocol routing + P2P + call management + screen sharing |
+| `frontend/src/DMPanel.jsx` | Private DM panel + Call modal + Video/Screen UI + AI Chat |
 
 ---
 
@@ -259,6 +302,7 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 | **Frontend** | React 18, Vite, Framer Motion, TailwindCSS, Chart.js |
 | **Backend** | Python, FastAPI, SQLite (WAL), JWT Auth |
 | **Real-time** | WebSocket, WebRTC DataChannels + MediaStream |
+| **Video/Screen** | WebRTC (getUserMedia + getDisplayMedia), Multiple STUN Servers |
 | **Networking** | Raw TCP/UDP sockets, Packet Fragmentation |
 | **AI** | Groq API (Llama 3.3 70B) + Local NLP fallback |
 
@@ -271,12 +315,40 @@ Both connect to:   Backend at 192.168.43.100:8000 (auto-detected)
 | AI features not working | Set `GROQ_API_KEY` in `backend/.env` |
 | Backend port in use | Kill process: `netstat -ano \| findstr :8000` |
 | Call not connecting | Allow microphone access in browser |
+| Video not showing on remote | Both users need camera/mic permission granted |
+| No video on phone | Enable insecure origins in chrome://flags (see instructions above) |
+| Screen share not available | Only works in Chromium browsers (Chrome, Edge). Not Firefox |
+| Screen share shows black | Ensure the shared window is not minimized |
 | Phone can't connect | Check firewall allows ports 5173 & 8000 |
 | Phone shows blank page | Make sure you used `npm run dev -- --host` |
 | Wrong IP on phone | Run `ipconfig` again — IP may change on reconnect |
+| Call drops randomly | Check both devices are on same network, STUN servers reachable |
+
+---
+
+## 📌 v5.0 Changelog
+
+### 🐛 Bug Fixes
+- **Fixed: PC camera not transmitting video to mobile device**
+  - `localStream` was stored only as a React `ref` — CallModal never received updates. Now stored as React state for proper re-rendering.
+  - `ontrack` handler now creates a **fresh MediaStream reference** each time to force React to re-render the video elements.
+  - Added **ICE candidate queuing** — candidates arriving before `setRemoteDescription` are now buffered and flushed after, preventing dropped connections on slower networks.
+  - `setRemoteDescription` is now properly `await`ed before processing ICE candidates.
+  - Added 4 STUN servers (was 2) for better NAT traversal reliability.
+  - Added connection state logging for debugging.
+  - Upgraded video constraints to 1280×720 for HD quality.
+
+### ✨ New Features
+- **Screen Mirroring** — Share your screen during any active call
+  - 🖥️ button appears during active calls
+  - Supports 1920×1080 at 30fps
+  - System audio sharing supported
+  - One-click toggle between screen and camera
+  - Auto-reverts to camera when browser screen share stops
+  - Visual glow indicator when actively sharing
 
 ---
 
 <p align="center">
-  <b>⚡ SmartChat X v4.0</b> — Groq AI • Private DMs • Voice Calls • WebRTC P2P • Smart Routing
+  <b>⚡ SmartChat X v5.0</b> — Groq AI • Private DMs • Voice/Video Calls • Screen Mirroring • WebRTC P2P • Smart Routing
 </p>

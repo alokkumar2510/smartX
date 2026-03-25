@@ -9,7 +9,7 @@ import { playDMSound } from './sounds';
 const API = `http://${window.location.hostname || '127.0.0.1'}:8000`;
 
 /* ─── CALL MODAL — Voice & Video ──────────────────────────── */
-export const CallModal = ({ callState, localStream, remoteStream, onAccept, onReject, onEnd }) => {
+export const CallModal = ({ callState, localStream, remoteStream, onAccept, onReject, onEnd, onToggleScreenShare, isScreenSharing }) => {
   const [duration, setDuration] = useState(0);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -86,7 +86,9 @@ export const CallModal = ({ callState, localStream, remoteStream, onAccept, onRe
               <div className="absolute top-3 left-3 px-3 py-1 rounded-lg"
                 style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)' }}>
                 <span className="text-neon-green font-mono text-sm">{formatTime(duration)}</span>
-                <span className="text-white/30 text-[9px] ml-2">📹 Video</span>
+                <span className="text-white/30 text-[9px] ml-2">
+                  {isScreenSharing ? '🖥️ Screen' : '📹 Video'}
+                </span>
               </div>
               {/* Username */}
               <div className="absolute bottom-3 left-3 px-3 py-1 rounded-lg"
@@ -187,20 +189,50 @@ export const CallModal = ({ callState, localStream, remoteStream, onAccept, onRe
               </>
             )}
             {(callState.status === 'ringing' || callState.status === 'active') && (
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={onEnd}
-                className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(255,45,120,0.3), rgba(255,45,120,0.1))',
-                  border: '2px solid rgba(255,45,120,0.5)',
-                  boxShadow: '0 0 30px rgba(255,45,120,0.3)',
-                  color: '#ff2d78',
-                }}
-              >
-                📞
-              </motion.button>
+              <>
+                {/* Screen Share / Mirror button — only during active call */}
+                {callState.status === 'active' && onToggleScreenShare && (
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={onToggleScreenShare}
+                    className="w-14 h-14 rounded-full flex items-center justify-center text-xl relative"
+                    style={{
+                      background: isScreenSharing
+                        ? 'linear-gradient(135deg, rgba(0,240,255,0.25), rgba(179,71,234,0.2))'
+                        : 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))',
+                      border: `2px solid ${isScreenSharing ? 'rgba(0,240,255,0.6)' : 'rgba(255,255,255,0.15)'}`,
+                      boxShadow: isScreenSharing ? '0 0 30px rgba(0,240,255,0.3)' : 'none',
+                      color: isScreenSharing ? '#00f0ff' : 'rgba(255,255,255,0.5)',
+                    }}
+                    title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+                  >
+                    🖥️
+                    {isScreenSharing && (
+                      <motion.div
+                        className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-neon-cyan"
+                        animate={{ scale: [1, 1.3, 1], opacity: [1, 0.6, 1] }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        style={{ boxShadow: '0 0 8px rgba(0,240,255,0.6)' }}
+                      />
+                    )}
+                  </motion.button>
+                )}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onEnd}
+                  className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(255,45,120,0.3), rgba(255,45,120,0.1))',
+                    border: '2px solid rgba(255,45,120,0.5)',
+                    boxShadow: '0 0 30px rgba(255,45,120,0.3)',
+                    color: '#ff2d78',
+                  }}
+                >
+                  📞
+                </motion.button>
+              </>
             )}
           </div>
         </div>
