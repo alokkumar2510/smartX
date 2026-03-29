@@ -1,63 +1,44 @@
 """
 ─── database.py ──────────────────────────────────────────
-SQLite database setup — creates tables on startup.
-Uses WAL mode + busy timeout for concurrent access.
+PostgreSQL database setup for Supabase using psycopg2.
+Adapter created to mimic sqlite3 for seamless integration.
 """
-import sqlite3
 import os
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "smartchat.db")
+load_dotenv()
 
+DB_URL = os.getenv("DATABASE_URL")
 
-def get_db() -> sqlite3.Connection:
-    """Get a database connection with proper concurrency settings."""
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+class DBAdapter:
+    def __init__(self, conn):
+        self.conn = conn
+    
+    def execute(self, query, params=None):
+        # Convert sqlite ? placeholders to psycopg2 %s placeholders
+        query = query.replace("?", "%s")
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cursor.execute(query, params)
+        return cursor
+        
+    def commit(self):
+        self.conn.commit()
+        
+    def close(self):
+        self.conn.close()
 
+def get_db():
+    if not DB_URL:
+        raise Exception("DATABASE_URL environment variable is not set. Please set it in your .env file with your Supabase Postgres connection string.")
+    
+    conn = psycopg2.connect(DB_URL)
+    return DBAdapter(conn)
 
 def init_db() -> None:
-    """Initialize database tables."""
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                avatar TEXT DEFAULT '👤',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_online INTEGER DEFAULT 0
-            )
-        """)
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender_id INTEGER NOT NULL,
-                sender_username TEXT NOT NULL,
-                content TEXT,
-                image_url TEXT,
-                protocol TEXT DEFAULT 'TCP',
-                delivered INTEGER DEFAULT 0,
-                read INTEGER DEFAULT 0,
-                dropped INTEGER DEFAULT 0,
-                room TEXT DEFAULT 'global',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (sender_id) REFERENCES users(id)
-            )
-        """)
-
-        # Reset online status on startup
-        cursor.execute("UPDATE users SET is_online = 0")
-
-        conn.commit()
-        print(f"[DB] Database initialized at {DB_PATH}")
-    finally:
-        conn.close()
+    """Initialize database tables (tables are handled by Supabase migrations)."""
+    if DB_URL:
+        print(f"[DB] Connected to PostgreSQL at {DB_URL.split('@')[1]}")
+    else:
+        print("[DB] Warning: DATABASE_URL not set!")

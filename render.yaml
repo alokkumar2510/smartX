@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: smartchatx-fastapi
+    env: python
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+    
+  - type: background
+    name: smartchatx-tcp
+    env: python
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && python -m server.tcp_server"
+    envVars:
+      - key: PORT
+        value: "9000"
+      
+  - type: background
+    name: smartchatx-udp
+    env: python
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && python -m server.udp_server"
+    envVars:
+      - key: PORT
+        value: "9001"

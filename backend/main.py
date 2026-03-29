@@ -157,10 +157,10 @@ async def register(req: RegisterRequest):
 
     hashed = hash_password(req.password)
     cursor = db.execute(
-        "INSERT INTO users (username, password_hash, avatar) VALUES (?, ?, ?)",
+        "INSERT INTO users (username, password_hash, avatar) VALUES (?, ?, ?) RETURNING id",
         (req.username, hashed, req.avatar)
     )
-    user_id = cursor.lastrowid
+    user_id = cursor.fetchone()[0]
     db.commit()
     db.close()
 
@@ -436,10 +436,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     cursor = db.execute(
                         """INSERT INTO messages (sender_id, sender_username, content,
                            image_url, protocol, room)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
+                           VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
                         (user_id, username, content, image_url, protocol, room)
                     )
-                    msg_id = cursor.lastrowid
+                    msg_id = cursor.fetchone()[0]
                     db.commit()
                 except Exception as e:
                     logger.error(f"[WS] DB insert failed: {e}")
@@ -569,10 +569,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         db = get_db()
                         cursor = db.execute(
                             """INSERT INTO direct_messages (sender_id, sender_username, target_user_id, content, image_url)
-                               VALUES (?, ?, ?, ?, ?)""",
+                               VALUES (?, ?, ?, ?, ?) RETURNING id""",
                             (user_id, username, target_id, content, image_url)
                         )
-                        dm_id = cursor.lastrowid
+                        dm_id = cursor.fetchone()[0]
                         db.commit()
                         db.close()
                     except Exception as e:
