@@ -22,8 +22,13 @@ import { Line, Doughnut, Bar } from 'react-chartjs-2';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler);
 
 const _host = window.location.hostname || '127.0.0.1';
-const API = `http://${_host}:8000`;
-const WS_URL = `ws://${_host}:8000`;
+// If VITE_API_URL is "https://smartchatx-backend.onrender.com/api", we extract the base for API
+const _apiBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, "") : `http://${_host}:8000`;
+const API = _apiBase;
+// WebSocket uses wss:// or ws:// depending on https
+const _wsProtocol = _apiBase.startsWith("https") ? "wss:" : "ws:";
+const _wsHost = _apiBase.replace(/^https?:\/\//, "");
+const WS_URL = `${_wsProtocol}//${_wsHost}`;
 
 /* ═══════════════════════════════════════════════════════════
    AUTH CONTEXT — Global authentication state with persistence
