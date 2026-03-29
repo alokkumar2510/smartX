@@ -60,21 +60,56 @@ class SqliteAdapter:
     def close(self):
         self.conn.close()
 
+def _init_sqlite_tables(conn):
+    # Ensure tables exist for SQLite fallback
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            avatar TEXT DEFAULT '👤',
+            is_online BOOLEAN DEFAULT 0,
+            last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER NOT NULL,
+            sender_username TEXT NOT NULL,
+            content TEXT,
+            image_url TEXT,
+            room TEXT DEFAULT 'global',
+            protocol TEXT DEFAULT 'TCP',
+            delivered BOOLEAN DEFAULT 0,
+            read BOOLEAN DEFAULT 0,
+            dropped BOOLEAN DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id) REFERENCES users (id)
+        )
+    """)
+    conn.commit()
+
 def get_db():
     if DB_URL:
         # Import psycopg2 locally here so it doesn't crash the app if missing locally
         try:
             import psycopg2
-            conn = psycopg2.connect(DB_URL)
+            # Use a strict 2 second timeout so unreachable IPv6 networks fail instantly
+            # without hanging the entire HTTP API request and causing a browser 'fetch' timeout.
+            conn = psycopg2.connect(DB_URL, connect_timeout=2)
             return PostgresAdapter(conn)
         except Exception as e:
             # If the database URL is incorrectly formatted, the password expired, or IPv4 is blocked,
             # gracefully catch it, print an error so they can debug it, and run the self-contained SQLite.
             print(f"[DB ERROR] PostgreSQL Connection Failed: {str(e)[:150]}... Falling back to SQLite!")
             conn = sqlite3.connect(SQLITE_DB_PATH)
+            _init_sqlite_tables(conn)
             return SqliteAdapter(conn)
     else:
         conn = sqlite3.connect(SQLITE_DB_PATH)
+        _init_sqlite_tables(conn)
         return SqliteAdapter(conn)
 
 def init_db() -> None:
