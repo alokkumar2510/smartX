@@ -1,29 +1,57 @@
 """
 ─── database.py ──────────────────────────────────────────
-PostgreSQL database setup for Supabase using psycopg2.
-Adapter created to mimic sqlite3 for seamless integration.
+Database setup with automatic fallback between PostgreSQL
+and SQLite3 depending on the environment context.
 """
 import os
 import sqlite3
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv()
 
 DB_URL = os.getenv("DATABASE_URL")
-# SQLite database path
 SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "smartchat.db")
 
 class PostgresAdapter:
     def __init__(self, conn):
         self.conn = conn
+        import psycopg2.extras
+        self.cursor_factory = psycopg2.extras.DictCursor
     
     def execute(self, query, params=None):
-        # Convert sqlite ? placeholders to psycopg2 %s placeholders
         query = query.replace("?", "%s")
-        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cursor = self.conn.cursor(cursor_factory=self.cursor_factory)
         cursor.execute(query, params)
+        return cursor
+        
+    def commit(self):
+        self.conn.commit()
+        
+    def close(self):
+        self.conn.close()
+
+class SqliteAdapter:
+    def __init__(self, conn):
+        self.conn = conn
+        self.conn.row_factory = sqlite3.Row
+    
+    def execute(self, query, params=None):
+        should_fetch_id = False
+        if "RETURNING id" in query:
+            query = query.replace("RETURNING id", "")
+            should_fetch_id = True
+            
+        cursor = self.conn.cursor()
+        cursor.execute(query, params or ())
+        
+        if should_fetch_id:
+            class DummyCursor:
+                def __init__(self, last_id):
+                    self.last_id = last_id
+                def fetchone(self):
+                    return [self.last_id]
+            return DummyCursor(cursor.lastrowid)
+            
         return cursor
         
     def commit(self):
@@ -34,13 +62,13 @@ class PostgresAdapter:
 
 def get_db():
     if DB_URL:
+        # Import psycopg2 locally here so it doesn't crash the app if missing locally
+        import psycopg2
         conn = psycopg2.connect(DB_URL)
         return PostgresAdapter(conn)
     else:
-        # Fallback to local SQLite database if no Postgres
         conn = sqlite3.connect(SQLITE_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return SqliteAdapter(conn)
 
 def init_db() -> None:
     """Initialize database tables."""
@@ -48,7 +76,6 @@ def init_db() -> None:
         print(f"[DB] Connected to PostgreSQL at {DB_URL.split('@')[-1]}")
     else:
         print(f"[DB] Notice: DATABASE_URL not set. Using local SQLite at {SQLITE_DB_PATH}")
-        # Initialize SQLite tables
         db = get_db()
         db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -78,3 +105,4 @@ def init_db() -> None:
         """)
         db.commit()
         db.close()
+
