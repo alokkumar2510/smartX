@@ -63,9 +63,16 @@ class SqliteAdapter:
 def get_db():
     if DB_URL:
         # Import psycopg2 locally here so it doesn't crash the app if missing locally
-        import psycopg2
-        conn = psycopg2.connect(DB_URL)
-        return PostgresAdapter(conn)
+        try:
+            import psycopg2
+            conn = psycopg2.connect(DB_URL)
+            return PostgresAdapter(conn)
+        except Exception as e:
+            # If the database URL is incorrectly formatted, the password expired, or IPv4 is blocked,
+            # gracefully catch it, print an error so they can debug it, and run the self-contained SQLite.
+            print(f"[DB ERROR] PostgreSQL Connection Failed: {str(e)[:150]}... Falling back to SQLite!")
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            return SqliteAdapter(conn)
     else:
         conn = sqlite3.connect(SQLITE_DB_PATH)
         return SqliteAdapter(conn)
