@@ -10,7 +10,7 @@ services:
       - key: GROQ_API_KEY
         sync: false
     
-  - type: background
+  - type: worker
     name: smartchatx-tcp
     env: python
     buildCommand: "cd backend && pip install -r requirements.txt"
@@ -19,7 +19,7 @@ services:
       - key: PORT
         value: "9000"
       
-  - type: background
+  - type: worker
     name: smartchatx-udp
     env: python
     buildCommand: "cd backend && pip install -r requirements.txt"
