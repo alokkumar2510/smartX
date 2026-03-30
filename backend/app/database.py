@@ -98,7 +98,7 @@ def get_db():
             import psycopg2
             # Use a strict 2 second timeout so unreachable IPv6 networks fail instantly
             # without hanging the entire HTTP API request and causing a browser 'fetch' timeout.
-            conn = psycopg2.connect(DB_URL, connect_timeout=2)
+            conn = psycopg2.connect(DB_URL.strip(), connect_timeout=2)
             return PostgresAdapter(conn)
         except Exception as e:
             # If the database URL is incorrectly formatted, the password expired, or IPv4 is blocked,
