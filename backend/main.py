@@ -59,6 +59,14 @@ app = FastAPI(
     description="Advanced TCP/UDP Chat System Backend with AI Engine, WebRTC & Adaptive Routing"
 )
 
+@app.get("/")
+async def root():
+    return {"message": "SmartChat X Backend is Live", "version": "3.0"}
+
+@app.get("/api/health")
+async def health():
+    return {"status": "healthy", "service": "SmartChat X Backend v3.0"}
+
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
