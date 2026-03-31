@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+/* ── App URL — update here if domain changes ── */
+const APP_URL = 'https://smartx.alokkumarsahu.in';
+
 /* ─────────────────────────────────────────────────────────────
    SCROLL ANIMATION HOOK
    ───────────────────────────────────────────────────────────── */
@@ -207,7 +210,7 @@ const Navbar = ({ scrolled }) => {
         </div>
         <div style={{ paddingRight:'clamp(24px, 8vw, 120px)', display:'flex', alignItems:'center', gap:'16px' }}>
           <div className="desktop-nav-links">
-            <PillDark onClick={()=>window.open('/app','_self')}>
+            <PillDark onClick={()=>window.open(APP_URL,'_blank')}>
               Launch App <ArrowRight size={12}/>
             </PillDark>
           </div>
@@ -235,7 +238,7 @@ const Navbar = ({ scrolled }) => {
             </a>
           ))}
           <div style={{ marginTop:'10px' }}>
-            <PillDark onClick={()=>window.open('/app','_self')} style={{ width: '100%', justifyContent: 'center' }}>
+            <PillDark onClick={()=>window.open(APP_URL,'_blank')} style={{ width: '100%', justifyContent: 'center' }}>
               Launch App <ArrowRight size={12}/>
             </PillDark>
           </div>
@@ -294,7 +297,7 @@ const HeroSection = () => {
         {/* CTAs */}
         <div style={{ display:'flex', gap:'16px', flexWrap:'wrap', justifyContent:'center',
           animation:'fadeInUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.65s both' }}>
-          <PillWhite onClick={()=>window.open('/app','_self')}>Launch App <ArrowRight size={12}/></PillWhite>
+          <PillWhite onClick={()=>window.open(APP_URL,'_blank')}>Launch App <ArrowRight size={12}/></PillWhite>
           <PillDark onClick={()=>document.getElementById('features')?.scrollIntoView({behavior:'smooth'})}>
             Explore Features
           </PillDark>
@@ -491,7 +494,7 @@ const AboutSection = () => {
               fontWeight:'400', marginBottom:'40px', textShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
               A full communication suite — instant messaging, HD calls, AI assistance, and granular privacy in one cohesive experience.
             </p>
-            <PillWhite onClick={()=>window.open('/app','_self')}>
+            <PillWhite onClick={()=>window.open(APP_URL,'_blank')}>
               Try it now <ArrowRight size={12}/>
             </PillWhite>
           </Reveal>
@@ -640,7 +643,7 @@ const CTASection = () => (
 
       <Reveal delay={240}>
         <div style={{ display:'flex', gap:'16px', justifyContent:'center', flexWrap:'wrap' }}>
-          <PillWhite onClick={()=>window.open('/app','_self')}>
+          <PillWhite onClick={()=>window.open(APP_URL,'_blank')}>
             Launch SmartChat X <ArrowRight size={12}/>
           </PillWhite>
           <PillDark onClick={()=>window.open('https://github.com/alokkumar2510','_blank')}>
