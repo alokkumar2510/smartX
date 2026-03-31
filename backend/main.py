@@ -63,6 +63,11 @@ app = FastAPI(
 async def root():
     return {"message": "SmartChat X Backend is Live", "version": "3.0"}
 
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint for frontend connectivity probing."""
+    return {"status": "ok", "version": "3.0", "timestamp": datetime.utcnow().isoformat()}
+
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -73,6 +78,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         # Custom domains
         "https://smartchatx.alokkumarsahu.in",
+        "https://smartx.alokkumarsahu.in",
         "https://alokkumarsahu.in",
         "https://www.alokkumarsahu.in",
         # Cloudflare Pages (live)

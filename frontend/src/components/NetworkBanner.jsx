@@ -1,36 +1,95 @@
 /**
  * NetworkBanner — Unified connection + network mode status bar
- * Replaces old ConnectionBanner.jsx
+ * Handles: connected, connecting, reconnecting, server_offline, auth_failed, disconnected
  * Used in: App.jsx (top of ChatDashboard)
  */
 import { useNetwork } from '../context/NetworkContext';
 
 const ICONS = { high: '📶', medium: '📉', low: '🔴' };
 
-const NetworkBanner = ({ connectionStatus, reconnectIn, onForceMode }) => {
+const NetworkBanner = ({ connectionStatus, reconnectIn, onRetry }) => {
   const { mode, isOnline, forceMode } = useNetwork();
 
   const showLowData    = mode !== 'high';
-  const showDisconnect = connectionStatus !== 'connected';
+  const showConnection = connectionStatus !== 'connected';
 
   // Nothing to show
-  if (!showLowData && !showDisconnect) return null;
+  if (!showLowData && !showConnection) return null;
+
+  // ── Connection status messages ─────────────
+  const getConnectionBanner = () => {
+    switch (connectionStatus) {
+      case 'connecting':
+        return {
+          text: '🔄 Connecting to server...',
+          bg: 'rgba(99,102,241,0.1)',
+          border: 'rgba(99,102,241,0.2)',
+          color: '#818cf8',
+        };
+
+      case 'reconnecting':
+        return {
+          text: `⏳ Reconnecting in ${reconnectIn}s...`,
+          bg: 'rgba(255,170,0,0.1)',
+          border: 'rgba(255,170,0,0.2)',
+          color: '#ffaa00',
+        };
+
+      case 'server_offline':
+        return {
+          text: reconnectIn > 0
+            ? `🔴 Server offline — retrying in ${reconnectIn}s...`
+            : '🔴 Server is offline. Click to retry.',
+          bg: 'rgba(255,45,120,0.1)',
+          border: 'rgba(255,45,120,0.2)',
+          color: '#ff2d78',
+          showRetry: reconnectIn <= 0,
+        };
+
+      case 'auth_failed':
+        return {
+          text: '🔐 Authentication failed — please log in again',
+          bg: 'rgba(239,68,68,0.1)',
+          border: 'rgba(239,68,68,0.2)',
+          color: '#ef4444',
+        };
+
+      case 'disconnected':
+        return {
+          text: '⚠ Disconnected from server',
+          bg: 'rgba(255,45,120,0.1)',
+          border: 'rgba(255,45,120,0.2)',
+          color: '#ff2d78',
+        };
+
+      default:
+        return null;
+    }
+  };
+
+  const connectionBanner = showConnection ? getConnectionBanner() : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', zIndex: 300 }}>
 
-      {/* ── Connection status (existing) ───────────────── */}
-      {showDisconnect && (
-        <div style={{
-          padding: '6px 16px', textAlign: 'center', fontSize: '12px', fontFamily: 'monospace',
-          fontWeight: '600', letterSpacing: '0.02em',
-          background: connectionStatus === 'reconnecting' ? 'rgba(255,170,0,0.1)' : 'rgba(255,45,120,0.1)',
-          borderBottom: `1px solid ${connectionStatus === 'reconnecting' ? 'rgba(255,170,0,0.2)' : 'rgba(255,45,120,0.2)'}`,
-          color: connectionStatus === 'reconnecting' ? '#ffaa00' : '#ff2d78',
-        }}>
-          {connectionStatus === 'reconnecting'
-            ? `⏳ Reconnecting in ${reconnectIn}s...`
-            : '⚠ Disconnected from server'}
+      {/* ── Connection status ───────────────── */}
+      {connectionBanner && (
+        <div
+          onClick={connectionBanner.showRetry ? onRetry : undefined}
+          style={{
+            padding: '6px 16px', textAlign: 'center', fontSize: '12px', fontFamily: 'monospace',
+            fontWeight: '600', letterSpacing: '0.02em',
+            background: connectionBanner.bg,
+            borderBottom: `1px solid ${connectionBanner.border}`,
+            color: connectionBanner.color,
+            cursor: connectionBanner.showRetry ? 'pointer' : 'default',
+            transition: 'background 0.2s ease',
+          }}
+        >
+          {connectionBanner.text}
+          {connectionBanner.showRetry && (
+            <span style={{ marginLeft: '8px', textDecoration: 'underline', opacity: 0.8 }}>⟳ Retry</span>
+          )}
         </div>
       )}
 

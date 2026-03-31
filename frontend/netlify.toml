@@ -1,5 +1,4 @@
 [build]
-  base    = "landing-v2"
   command = "npm install && npm run build"
   publish = "dist"
 

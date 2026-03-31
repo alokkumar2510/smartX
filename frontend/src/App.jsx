@@ -247,9 +247,52 @@ const ChatDashboard = () => {
     if (el.scrollTop < 100) loadMoreMessages();
   }, [loadingMore, hasMoreMessages, loadMoreMessages]);
 
+  // ── Health check helper ─────────────────────────────
+  const checkBackendHealth = useCallback(async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${API}/api/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
   // ── WebSocket connection with reconnection logic ────
-  const connectWebSocket = useCallback(() => {
+  const connectWebSocket = useCallback(async () => {
     if (!token) return;
+
+    // Health check before attempting WS connection
+    setConnectionStatus('connecting');
+    const healthy = await checkBackendHealth();
+    if (!healthy) {
+      console.warn('[WS] ❌ Backend unreachable — server may be offline or cold-starting');
+      setConnectionStatus('server_offline');
+      // Retry health check with long backoff
+      if (reconnectAttempt.current < maxReconnectAttempts) {
+        const delay = Math.min(2 ** reconnectAttempt.current * 2000, 60000);
+        const delaySec = Math.ceil(delay / 1000);
+        setReconnectIn(delaySec);
+        let countdown = delaySec;
+        const countdownInterval = setInterval(() => {
+          countdown--;
+          setReconnectIn(countdown);
+          if (countdown <= 0) clearInterval(countdownInterval);
+        }, 1000);
+        reconnectTimer.current = setTimeout(() => {
+          reconnectAttempt.current++;
+          connectWebSocket();
+        }, delay);
+      } else {
+        setConnectionStatus('server_offline');
+        setReconnectIn(0);
+        console.error('[WS] 🛑 Max reconnection attempts reached. Server appears offline.');
+      }
+      return;
+    }
+
     const socket = new WebSocket(`${WS_URL}/ws/${token}`);
 
     socket.onopen = () => {
@@ -410,9 +453,9 @@ const ChatDashboard = () => {
       } catch {}
     };
 
-    socket.onclose = () => {
-      setConnectionStatus('disconnected');
+    socket.onclose = (event) => {
       clearInterval(socket._statsInterval);
+      console.log(`[WS] 🔌 Connection closed (code: ${event.code}, reason: ${event.reason || 'none'})`);
       // Phase 4: Request background sync so SW flushes queue when online
       requestBackgroundSync();
       // Phase 2: Load cached messages for offline reading
@@ -425,6 +468,14 @@ const ChatDashboard = () => {
           });
         }
       });
+
+      // If server rejected the token (4001), don't retry
+      if (event.code === 4001) {
+        console.error('[WS] 🔐 Token rejected by server — re-login required');
+        setConnectionStatus('auth_failed');
+        return;
+      }
+
       if (reconnectAttempt.current < maxReconnectAttempts) {
         const delay = Math.min(2 ** reconnectAttempt.current * 1000, 30000);
         const delaySec = Math.ceil(delay / 1000);
@@ -433,12 +484,15 @@ const ChatDashboard = () => {
         let countdown = delaySec;
         const countdownInterval = setInterval(() => { countdown--; setReconnectIn(countdown); if (countdown <= 0) clearInterval(countdownInterval); }, 1000);
         reconnectTimer.current = setTimeout(() => { reconnectAttempt.current++; connectWebSocket(); }, delay);
+      } else {
+        setConnectionStatus('server_offline');
+        setReconnectIn(0);
       }
     };
 
-    socket.onerror = () => console.log('[WS] ❌ Connection error');
+    socket.onerror = (err) => console.log('[WS] ❌ Connection error:', err.type);
     ws.current = socket;
-  }, [token]);
+  }, [token, checkBackendHealth]);
 
   useEffect(() => {
     connectWebSocket();
@@ -447,6 +501,13 @@ const ChatDashboard = () => {
       ws.current?.close();
       Object.values(peerConnections.current).forEach(pc => pc.close());
     };
+  }, [connectWebSocket]);
+
+  // ── Manual retry (when max attempts exhausted) ──────
+  const retryConnection = useCallback(() => {
+    reconnectAttempt.current = 0;
+    clearTimeout(reconnectTimer.current);
+    connectWebSocket();
   }, [connectWebSocket]);
 
   // ── WebRTC P2P Handlers ─────────────────────────────
@@ -859,7 +920,7 @@ const ChatDashboard = () => {
         onDMClick={setDmTarget} onCall={initiateCall} isDND={isDND} onThemeChange={handleThemeChange} />
 
       <div className="flex-1 flex flex-col relative z-10 min-w-0">
-        <NetworkBanner connectionStatus={connectionStatus} reconnectIn={reconnectIn} />
+        <NetworkBanner connectionStatus={connectionStatus} reconnectIn={reconnectIn} onRetry={retryConnection} />
 
         {/* Header */}
         <header className="border-b px-4 py-3 flex items-center justify-between"
