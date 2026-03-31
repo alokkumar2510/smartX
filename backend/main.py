@@ -67,17 +67,26 @@ async def root():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173", 
-        "http://localhost:3000", 
+        "http://localhost:5173",
+        "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000",
+        # Custom domains
         "https://smartchatx.alokkumarsahu.in",
-        "https://smartchat-x.netlify.app"
+        "https://alokkumarsahu.in",
+        "https://www.alokkumarsahu.in",
+        # Cloudflare Pages (live)
+        "https://smartchatx-app.pages.dev",
+        "https://smartchatx-landing.pages.dev",
+        # Netlify (legacy / fallback)
+        "https://smartchatx-app.netlify.app",
+        "https://smartchatx.netlify.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Uploads directory
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
