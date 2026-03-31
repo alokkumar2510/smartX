@@ -89,8 +89,8 @@ def _init_tables(db):
             delivered {bool_type},
             read {bool_type},
             dropped {bool_type},
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (sender_id) REFERENCES users (id)
+            reply_to TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     db.commit()

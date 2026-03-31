@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartChat X — The Luminescent Void</title>
+  <meta name="description" content="SmartChat X v5.0 — Immersive, high-fidelity communication where deep space depth meets kinetic energy. Powered by Groq AI and WebRTC." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <style>
+    /* ─── DESIGN TOKENS — THE LUMINESCENT VOID ─── */
+    :root {
+      /* Backgrounds & Surfaces (Tonal Layering) */
+      --surface-dim:               #0d0d1a; /* Base Layer */
+      --surface:                   #0d0d1a;
+      --surface-container-lowest:  #000000;
+      --surface-container-low:     #121221; /* Secondary Layer */
+      --surface-container:         #181828;
+      --surface-container-high:    #1e1e30; /* Elevated Layer */
+      --surface-container-highest: #242437;
+      --surface-variant:           #242437;
+      
+      /* Primary Brand Colors */
+      --primary:      #8ff5ff; /* Luminescent Cyan */
+      --primary-dim:  #00deec;
+      --secondary:    #d277ff; /* Kinetic Purple */
+      --tertiary:     #ff6c92; /* High-attention Pink */
+      
+      /* Text Colors (Legacy "on-surface") */
+      --on-surface:   #e6e3f7; /* Off-white to prevent eye-bleed */
+      --on-surface-variant: #aba9bc;
+      
+      /* Accents & Outlines (Ghost Borders) */
+      --outline:      #757485;
+      --outline-variant: rgba(71, 70, 86, 0.15); /* Ghost Border Rule: 15% opacity */
+      
+      /* Gradients & Shadows */
+      --grad-kinetic: linear-gradient(135deg, #00f0ff, #b347ea);
+      --shadow-ambient: 0 40px 60px rgba(143, 245, 255, 0.05); /* Tinted subtle shadow */
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--surface-dim);
+      color: var(--on-surface);
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* ─── THE NO-LINE RULE ─── */
+    /* Major sections use background shifts, NOT borders */
+    section { position: relative; padding: 10rem 2rem; border: none; }
+    .bg-low { background: var(--surface-container-low); }
+    .bg-dim { background: var(--surface-dim); }
+
+    h1, h2, h3, .brand-font {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    /* ─── TYPOGRAPHY: EDITORIAL CONTRAST ─── */
+    .display-lg {
+      font-size: clamp(3rem, 8vw, 5.5rem);
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+      margin-bottom: 2.5rem; /* Large white space as per spec */
+    }
+
+    .editorial-gap { margin-bottom: 4rem; }
+
+    .shimmer-text {
+      background: var(--grad-kinetic);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-size: 200% auto;
+      animation: shimmer 5s linear infinite;
+    }
+
+    /* ─── NAV: ATMOSPHERIC LAYERING ─── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      padding: 1.5rem 3rem;
+      background: rgba(13, 13, 26, 0.6);
+      backdrop-filter: blur(40px); /* Advanced Glassmorphism */
+      display: flex; justify-content: space-between; align-items: center;
+      transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    nav.scrolled { background: rgba(13, 13, 26, 0.95); padding: 1rem 3rem; }
+
+    .nav-logo {
+      font-size: 1.25rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+
+    .nav-links { display: flex; gap: 2.5rem; align-items: center; }
+    .nav-links a {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em;
+      color: var(--on-surface-variant); transition: color 0.3s;
+    }
+    .nav-links a:hover { color: var(--primary); }
+
+    /* ─── BUTTONS ─── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.75rem;
+      padding: 1rem 2.5rem; border-radius: 9999px; /* Rounding rule: full */
+      font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 700;
+      letter-spacing: 0.05em; transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+      cursor: pointer; position: relative; overflow: hidden;
+    }
+
+    .btn-primary {
+      background: var(--grad-kinetic);
+      color: #003f43; /* on-primary-fixed */
+      box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+    }
+    .btn-primary:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 10px 40px rgba(0, 240, 255, 0.4);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--outline-variant); /* Ghost Border */
+      color: var(--on-surface);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.1);
+      transform: translateY(-4px);
+    }
+
+    /* ─── HERO ─── */
+    .hero {
+      height: 100vh; display: flex; align-items: center; justify-content: center;
+      text-align: center; padding-top: 5rem;
+      background: radial-gradient(circle at 50% -20%, rgba(0, 240, 255, 0.08), transparent 70%);
+    }
+    .hero-content { max-width: 1000px; }
+    .hero-label {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--secondary);
+      text-transform: uppercase; letter-spacing: 0.4em; margin-bottom: 2rem;
+      display: block; opacity: 0.8;
+    }
+
+    /* ─── FEATURE CARDS: 3D TILT ─── */
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem; max-width: 1200px; margin: 0 auto;
+    }
+
+    .card {
+      background: var(--surface-container-low); padding: 3rem;
+      border-radius: 1.5rem; /* xl rounding */
+      transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+      transform-style: preserve-3d;
+      perspective: 1000px;
+    }
+    .card:hover {
+      background: var(--surface-container-highest);
+      transform: translateY(-10px) rotateX(2deg) rotateY(2deg);
+      box-shadow: var(--shadow-ambient);
+    }
+    .card-icon {
+      font-size: 2.5rem; margin-bottom: 2rem; color: var(--primary);
+      filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.2));
+    }
+    .card h3 { font-size: 1.25rem; margin-bottom: 1rem; color: var(--on-surface); }
+    .card p { font-size: 0.95rem; color: var(--on-surface-variant); line-height: 1.7; }
+
+    /* ─── FOUNDER SECTION ─── */
+    .founder-wrap {
+      max-width: 1000px; margin: 0 auto;
+      display: flex; gap: 4rem; align-items: center;
+      padding: 5rem; border-radius: 2.5rem;
+      background: var(--surface-container-low);
+    }
+    .founder-img {
+      width: 280px; height: 280px; border-radius: 50%;
+      position: relative; flex-shrink: 0;
+    }
+    .founder-img::before {
+      content: ''; position: absolute; inset: -4px; border-radius: 50%;
+      background: var(--grad-kinetic); z-index: 0;
+      animation: spin 10s linear infinite;
+    }
+    .founder-img img {
+      width: 100%; height: 100%; border-radius: 50%;
+      object-fit: cover; position: relative; z-index: 1;
+      border: 6px solid var(--surface-container-low);
+    }
+    .founder-info h2 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+    .founder-title {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+      color: var(--primary); text-transform: uppercase; letter-spacing: 0.2em;
+      margin-bottom: 2rem; display: block;
+    }
+    .founder-info p { color: var(--on-surface-variant); margin-bottom: 2.5rem; }
+
+    /* ─── ASYMMETRIC CONTENT ─── */
+    .asymmetric-section {
+      display: flex; align-items: center; gap: 6rem;
+    }
+    .asymmetric-section:nth-child(even) { flex-direction: row-reverse; }
+    .half-col { flex: 1; }
+    .asymmetric-section .shimmer-text { font-size: 3.5rem; margin-bottom: 2rem; }
+
+    /* ─── ANIMATIONS ─── */
+    @keyframes shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* ─── DECORATIVE PARTICLES ─── */
+    #particles { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.4; }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 968px) {
+      .nav-links { display: none; }
+      .founder-wrap { flex-direction: column; text-align: center; padding: 3rem; }
+      .asymmetric-section { flex-direction: column !important; text-align: center; gap: 3rem; }
+      .display-lg { font-size: 3.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<nav id="navbar">
+  <div class="nav-logo brand-font"><span class="shimmer-text">⚡</span> SmartChat X</div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#founder">Founder</a>
+    <a href="/app" class="btn btn-primary" style="padding: 0.5rem 1.5rem; font-size: 0.75rem;">Launch App</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-content">
+    <span class="hero-label">The Luminescent Void — SmartChat X v5.0</span>
+    <h1 class="display-lg">The Future of <br/><span class="shimmer-text">Deep Communication</span></h1>
+    <p class="on-surface-variant editorial-gap" style="max-width: 700px; margin-left: auto; margin-right: auto; font-size: 1.15rem;">
+      An immersive communication instrument crafted for the modern era. 
+      Bridging the gap between high-fidelity networking and intelligent AI systems.
+    </p>
+    <div class="flex-btns" style="display: flex; gap: 1.5rem; justify-content: center;">
+      <a href="/app" class="btn btn-primary">🚀 Launch System</a>
+      <a href="#features" class="btn btn-secondary">Explore Design ↓</a>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="bg-low">
+  <div style="text-align: center; margin-bottom: 5rem;">
+    <h2 class="shimmer-text" style="font-size: 3rem; margin-bottom: 1.5rem;">Precision Features</h2>
+    <p class="on-surface-variant" style="max-width: 600px; margin: 0 auto;">No lines. Just tonal depth and kinetic light.</p>
+  </div>
+  
+  <div class="grid">
+    <div class="card">
+      <div class="card-icon"><i class="fas fa-brain"></i></div>
+      <h3>AI Singularity</h3>
+      <p>Groq-powered Llama 3.3 integration. Context-aware intelligence baked into every message, summarizing the noise into signal.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon"><i class="fas fa-bolt"></i></div>
+      <h3>Multi-Protocol P2P</h3>
+      <p>TCP for reliability, UDP for speed. Automatic protocol switching based on content analysis and network latency.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon"><i class="fas fa-video"></i></div>
+      <h3>HD Mirroring</h3>
+      <p>Real-time screen share and video calls with zero-latency ice candidate negotiation. Encryption at the core.</p>
+    </div>
+  </div>
+</section>
+
+<section class="bg-dim">
+  <div class="asymmetric-section">
+    <div class="half-col">
+      <h2 class="shimmer-text">Design with Light, Not Lines.</h2>
+      <p class="on-surface-variant editorial-gap" style="font-size: 1.25rem;">
+        We eschew rigid boxes. Boundaries are defined by tonal transitions—light emerging from the luminescent void. 
+        A UI that breaths.
+      </p>
+      <a href="/app" class="btn btn-primary">Experience Depth</a>
+    </div>
+    <div class="half-col" style="background: var(--surface-container-high); height: 400px; border-radius: 2rem; position: relative; overflow: hidden;">
+       <div style="position: absolute; top: 20%; left: 10%; width: 50%; height: 10px; background: var(--grad-kinetic); border-radius: 10px; opacity: 0.3;"></div>
+       <div style="position: absolute; top: 40%; left: 10%; width: 70%; height: 10px; background: var(--grad-kinetic); border-radius: 10px; opacity: 0.2;"></div>
+       <div style="position: absolute; top: 60%; left: 10%; width: 40%; height: 10px; background: var(--grad-kinetic); border-radius: 10px; opacity: 0.1;"></div>
+    </div>
+  </div>
+</section>
+
+<section id="founder" class="bg-low">
+  <div class="founder-wrap">
+    <div class="founder-img">
+      <img src="images/founder.jpeg" alt="Alok Kumar Sahu" />
+    </div>
+    <div class="founder-info">
+      <h2>Alok Kumar Sahu</h2>
+      <span class="founder-title">Architect of the Void</span>
+      <p>
+        Full-Stack Engineer specialized in real-time systems and AI synergy. 
+        SmartChat X is a testament to the belief that communication should be an immersive art form.
+      </p>
+      <div style="display: flex; gap: 1rem;">
+        <a href="https://github.com/alokkumar2510" target="_blank" class="btn btn-secondary" style="padding: 0.6rem 1.5rem; font-size: 0.75rem;"><i class="fab fa-github"></i> Source</a>
+        <a href="mailto:alok@example.com" class="btn btn-secondary" style="padding: 0.6rem 1.5rem; font-size: 0.75rem;"><i class="fas fa-envelope"></i> Contact</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer style="padding: 5rem 2rem; text-align: center; background: var(--surface-dim);">
+  <div class="brand-font" style="font-size: 1.5rem; margin-bottom: 2rem;">⚡ SmartChat X</div>
+  <p class="on-surface-variant" style="font-size: 0.85rem; letter-spacing: 0.05em; margin-bottom: 1rem;">
+    MADE WITH <span style="color: var(--tertiary);">❤️</span> BY ALOK KUMAR SAHU
+  </p>
+  <div class="on-surface-variant" style="opacity: 0.4; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+    © 2026 THE LUMINESCENT VOID • ALL RIGHTS RESERVED
+  </div>
+</footer>
+
+<script>
+  // Particle Background Logic
+  const canvas = document.getElementById('particles');
+  const ctx = canvas.getContext('2d');
+  let w, h, particles = [];
+
+  function init() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+    particles = [];
+    for (let i = 0; i < 50; i++) {
+        particles.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: (Math.random() - 0.5) * 0.3,
+            size: Math.random() * 2 + 1
+        });
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = '#8ff5ff22';
+    particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if(p.x < 0 || p.x > w) p.vx *= -1;
+        if(p.y < 0 || p.y > h) p.vy *= -1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', init);
+  init();
+  draw();
+
+  // Scroll logic
+  const navbar = document.getElementById('navbar');
+  window.addEventListener('scroll', () => {
+    if(window.scrollY > 50) navbar.classList.add('scrolled');
+    else navbar.classList.remove('scrolled');
+  });
+
+  // Simple tilt effect for cards
+  document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('mousemove', e => {
+      const rect = card.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      card.style.transform = `translateY(-10px) rotateX(${-y * 10}deg) rotateY(${x * 10}deg)`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+    });
+  });
+</script>
+</body>
+</html>

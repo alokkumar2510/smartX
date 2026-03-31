@@ -1,0 +1,24 @@
+[build]
+  base = "."
+  command = "npm install --prefix landing-v2 && npm run build --prefix landing-v2 && npm install --prefix frontend && npm run build --prefix frontend && rm -rf dist && mkdir -p dist/app && cp -r landing-v2/dist/* dist/ && cp -r frontend/dist/* dist/app/"
+  publish = "dist"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+
+[[redirects]]
+  from = "/app/*"
+  to   = "/app/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/app"
+  to   = "/app/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to   = "/index.html"
+  status = 200

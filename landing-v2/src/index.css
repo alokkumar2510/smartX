@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* ─── Global Design Tokens ─────────────────────────────── */
+:root {
+  --font-sans: 'General Sans', system-ui, -apple-system, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: #000000;
+  color: #ffffff;
+  overflow-x: hidden;
+}
+
+/* ─── Custom Gradient Heading ───────────────────────────── */
+.hero-heading-gradient {
+  background: linear-gradient(
+    144.5deg,
+    #ffffff 28%,
+    rgba(0, 0, 0, 0) 115%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Button Glow Streak ────────────────────────────────── */
+.btn-glow-streak::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  border-radius: 100%;
+  filter: blur(2px);
+}
+
+.btn-glow-streak::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40%;
+  height: 6px;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.25) 0%, transparent 70%);
+  border-radius: 100%;
+  filter: blur(3px);
+}

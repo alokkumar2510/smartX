@@ -63,10 +63,6 @@ app = FastAPI(
 async def root():
     return {"message": "SmartChat X Backend is Live", "version": "3.0"}
 
-@app.get("/api/health")
-async def health():
-    return {"status": "healthy", "service": "SmartChat X Backend v3.0"}
-
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -95,14 +91,19 @@ async def startup():
     # Create DMs table if not exists
     try:
         db = get_db()
-        db.execute("""CREATE TABLE IF NOT EXISTS direct_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        is_pg = hasattr(db, 'conn') and 'psycopg2' in str(type(db.conn))
+        id_col = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        db.execute(f"""CREATE TABLE IF NOT EXISTS direct_messages (
+            id {id_col},
             sender_id INTEGER NOT NULL,
             sender_username TEXT NOT NULL,
             target_user_id INTEGER NOT NULL,
             content TEXT,
             image_url TEXT,
             protocol TEXT DEFAULT 'TCP',
+            status TEXT DEFAULT 'sent',
+            delivered INTEGER DEFAULT 0,
+            read INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""")
         db.commit()
@@ -213,13 +214,48 @@ async def login(req: LoginRequest):
 @app.get("/api/me")
 async def get_me(token: str):
     payload = get_current_user(token)
-    db = get_db()
-    user = db.execute("SELECT id, username, avatar, last_seen FROM users WHERE id = ?",
-                      (payload["user_id"],)).fetchone()
-    db.close()
-    if not user:
-        raise HTTPException(404, "User not found")
-    return dict(user)
+    db = None
+    try:
+        db = get_db()
+        # Try by integer ID first (legacy), then by username (Supabase)
+        user = None
+        uid = payload.get("user_id")
+        if isinstance(uid, int) or (isinstance(uid, str) and uid.isdigit()):
+            user = db.execute("SELECT id, username, avatar, last_seen FROM users WHERE id = ?", (int(uid),)).fetchone()
+        if not user and payload.get("username"):
+            user = db.execute("SELECT id, username, avatar, last_seen FROM users WHERE username = ?", (payload["username"],)).fetchone()
+        if not user:
+            raise HTTPException(404, "User not found")
+        result = dict(user)
+        result["email"] = payload.get("email")
+        return result
+    finally:
+        if db:
+            db.close()
+
+
+@app.post("/api/auth/profile")
+async def sync_supabase_profile(token: str, username: str = None, avatar: str = "👤"):
+    """Sync Supabase Auth user to local users table."""
+    payload = get_current_user(token)
+    uname = username or payload.get("username", "user")
+    db = None
+    try:
+        db = get_db()
+        existing = db.execute("SELECT id, username, avatar FROM users WHERE username = ?", (uname,)).fetchone()
+        if existing:
+            return {"user": dict(existing), "synced": True}
+        cursor = db.execute(
+            "INSERT INTO users (username, password_hash, avatar) VALUES (?, ?, ?) RETURNING id",
+            (uname, "supabase_auth", avatar)
+        )
+        user_id = cursor.fetchone()[0]
+        db.commit()
+        logger.info(f"🔗 Supabase user synced: {uname} (ID: {user_id})")
+        return {"user": {"id": user_id, "username": uname, "avatar": avatar}, "synced": True}
+    finally:
+        if db:
+            db.close()
 
 
 # ═════════════════════════════════════════════════════════
@@ -227,13 +263,20 @@ async def get_me(token: str):
 # ═════════════════════════════════════════════════════════
 
 @app.get("/api/users")
-async def get_users():
-    db = get_db()
-    users = db.execute(
-        "SELECT id, username, avatar, is_online, last_seen FROM users ORDER BY is_online DESC, username"
-    ).fetchall()
-    db.close()
-    return [dict(u) for u in users]
+async def get_users(token: str = None):
+    # Auth guard — require valid token to enumerate users
+    if token:
+        get_current_user(token)  # raises 401 if invalid
+    db = None
+    try:
+        db = get_db()
+        users = db.execute(
+            "SELECT id, username, avatar, is_online, last_seen FROM users ORDER BY is_online DESC, username"
+        ).fetchall()
+        return [dict(u) for u in users]
+    finally:
+        if db:
+            db.close()
 
 
 @app.get("/api/users/online")
@@ -242,21 +285,98 @@ async def get_online_users():
 
 
 # ═════════════════════════════════════════════════════════
-#  MESSAGES ROUTES
+#  MESSAGES ROUTES (with cursor-based pagination)
 # ═════════════════════════════════════════════════════════
 
 @app.get("/api/messages")
-async def get_messages(room: str = "global", limit: int = 100):
-    db = get_db()
-    messages = db.execute(
-        """SELECT id, sender_id, sender_username, content, image_url,
-                  protocol, delivered, read, dropped, room, created_at
-           FROM messages WHERE room = ?
-           ORDER BY created_at DESC LIMIT ?""",
-        (room, limit)
-    ).fetchall()
-    db.close()
-    return [dict(m) for m in reversed(messages)]
+async def get_messages(room: str = "global", limit: int = 50, before_id: int = None):
+    """Get messages with cursor-based pagination for infinite scroll.
+    - before_id: fetch messages older than this ID
+    - limit: max messages per page (default 50)
+    """
+    db = None
+    try:
+        db = get_db()
+        if before_id:
+            messages = db.execute(
+                """SELECT id, sender_id, sender_username, content, image_url,
+                          protocol, delivered, read, dropped, room, reply_to, created_at
+                   FROM messages WHERE room = ? AND id < ?
+                   ORDER BY id DESC LIMIT ?""",
+                (room, before_id, limit)
+            ).fetchall()
+        else:
+            messages = db.execute(
+                """SELECT id, sender_id, sender_username, content, image_url,
+                          protocol, delivered, read, dropped, room, reply_to, created_at
+                   FROM messages WHERE room = ?
+                   ORDER BY id DESC LIMIT ?""",
+                (room, limit)
+            ).fetchall()
+        result = []
+        for m in reversed(messages):
+            row = dict(m)
+            # Parse reply_to JSON string → object
+            if row.get('reply_to') and isinstance(row['reply_to'], str):
+                try:
+                    row['reply_to'] = json.loads(row['reply_to'])
+                except Exception:
+                    row['reply_to'] = None
+            result.append(row)
+        has_more = len(messages) == limit
+        return {"messages": result, "has_more": has_more}
+    finally:
+        if db:
+            db.close()
+
+
+@app.get("/api/dm/history")
+async def get_dm_history(user_id: int, target_id: int, limit: int = 50, before_id: int = None):
+    """REST endpoint for DM history with pagination."""
+    db = None
+    try:
+        db = get_db()
+        if before_id:
+            dms = db.execute(
+                """SELECT * FROM direct_messages
+                   WHERE ((sender_id = ? AND target_user_id = ?)
+                      OR (sender_id = ? AND target_user_id = ?))
+                      AND id < ?
+                   ORDER BY id DESC LIMIT ?""",
+                (user_id, target_id, target_id, user_id, before_id, limit)
+            ).fetchall()
+        else:
+            dms = db.execute(
+                """SELECT * FROM direct_messages
+                   WHERE (sender_id = ? AND target_user_id = ?)
+                      OR (sender_id = ? AND target_user_id = ?)
+                   ORDER BY id DESC LIMIT ?""",
+                (user_id, target_id, target_id, user_id, limit)
+            ).fetchall()
+        result = [dict(d) for d in reversed(dms)]
+        has_more = len(dms) == limit
+        return {"messages": result, "has_more": has_more}
+    finally:
+        if db:
+            db.close()
+
+
+@app.post("/api/dm/mark-read")
+async def mark_dm_read(sender_id: int, reader_id: int):
+    """Mark all DMs from sender as read by reader."""
+    db = None
+    try:
+        db = get_db()
+        db.execute(
+            """UPDATE direct_messages SET status = 'read', read = 1
+               WHERE sender_id = ? AND target_user_id = ? AND status != 'read'""",
+            (sender_id, reader_id)
+        )
+        db.commit()
+        return {"status": "ok"}
+    finally:
+        if db:
+            db.close()
 
 
 # ═════════════════════════════════════════════════════════
@@ -333,7 +453,7 @@ async def ai_route_protocol(msg: dict):
 # ═════════════════════════════════════════════════════════
 
 @app.get("/api/health")
-async def health():
+async def health_check():
     return {
         "status": "healthy",
         "service": "SmartChat X Backend v3.0",
@@ -384,18 +504,37 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
     user_id = payload["user_id"]
     username = payload["username"]
 
-    # ── Mark online in DB ────────────────────────────
+    # ── Resolve Supabase UUID to DB integer ID ────────
+    db_user_id = user_id
     try:
         db = get_db()
-        db.execute("UPDATE users SET is_online = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
+        if isinstance(user_id, str) and not user_id.isdigit():
+            # Supabase user — look up by username
+            row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if row:
+                db_user_id = row[0]
+            else:
+                # Auto-create profile
+                cursor = db.execute(
+                    "INSERT INTO users (username, password_hash, avatar) VALUES (?, ?, ?) RETURNING id",
+                    (username, "supabase_auth", payload.get("avatar", "👤"))
+                )
+                db_user_id = cursor.fetchone()[0]
+                db.commit()
+        else:
+            db_user_id = int(user_id)
+        # Mark online
+        db.execute("UPDATE users SET is_online = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?", (db_user_id,))
         db.commit()
     except Exception as e:
-        logger.warning(f"[WS] DB mark-online failed: {e}")
+        logger.warning(f"[WS] DB resolve/mark-online failed: {e}")
     finally:
         try:
             db.close()
         except Exception:
             pass
+
+    user_id = db_user_id  # Use resolved integer ID from here on
 
     # ── Connect WebSocket ────────────────────────────
     await manager.connect(user_id, username, websocket)
@@ -404,6 +543,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
     try:
         while True:
             data = await websocket.receive_text()
+            # SEC: Reject oversized messages (64KB limit)
+            if len(data) > 65536:
+                await websocket.send_text(json.dumps({"type": "error", "message": "Message too large (max 64KB)"}))
+                continue
             try:
                 msg = json.loads(data)
             except json.JSONDecodeError:
@@ -446,13 +589,15 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
 
                 # Step 1: Save to SQLite
                 msg_id = 0
+                db = None
                 try:
                     db = get_db()
+                    reply_to_json = json.dumps(msg.get("reply_to")) if msg.get("reply_to") else None
                     cursor = db.execute(
                         """INSERT INTO messages (sender_id, sender_username, content,
-                           image_url, protocol, room)
-                           VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
-                        (user_id, username, content, image_url, protocol, room)
+                           image_url, protocol, room, reply_to)
+                           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                        (user_id, username, content, image_url, protocol, room, reply_to_json)
                     )
                     msg_id = cursor.fetchone()[0]
                     db.commit()
@@ -460,10 +605,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     logger.error(f"[WS] DB insert failed: {e}")
                     msg_id = int(time.time() * 1000) % 1000000
                 finally:
-                    try:
-                        db.close()
-                    except Exception:
-                        pass
+                    if db:
+                        try:
+                            db.close()
+                        except Exception:
+                            pass
 
                 message_data = {
                     "id": msg_id,
@@ -519,15 +665,30 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 }), exclude_id=user_id)
 
             # ═══════════════════════════════════════════
-            #  HANDLE: read_receipt
+            #  HANDLE: read_receipt — persisted to DB
             # ═══════════════════════════════════════════
             elif event_type == "read_receipt":
                 target_id = msg.get("target_user_id")
+                message_ids = msg.get("message_ids", [])
                 if target_id:
+                    # Persist read status
+                    try:
+                        db = get_db()
+                        if message_ids:
+                            for mid in message_ids:
+                                db.execute("UPDATE direct_messages SET status = 'read', read = 1 WHERE id = ? AND target_user_id = ?", (mid, user_id))
+                        else:
+                            db.execute("UPDATE direct_messages SET status = 'read', read = 1 WHERE sender_id = ? AND target_user_id = ? AND status != 'read'", (target_id, user_id))
+                        db.commit()
+                        db.close()
+                    except Exception as e:
+                        logger.warning(f"Read receipt DB error: {e}")
+                    # Notify sender
                     await manager.send_to(target_id, json.dumps({
                         "type": "messages_read",
                         "reader_id": user_id,
                         "reader_username": username,
+                        "message_ids": message_ids,
                     }))
 
             # ═══════════════════════════════════════════
@@ -578,21 +739,24 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 content = msg.get("content", "")
                 image_url = msg.get("image_url")
                 if target_id and (content or image_url):
-                    # Save DM to database
                     dm_id = 0
+                    db = None
                     try:
                         db = get_db()
                         cursor = db.execute(
-                            """INSERT INTO direct_messages (sender_id, sender_username, target_user_id, content, image_url)
-                               VALUES (?, ?, ?, ?, ?) RETURNING id""",
+                            """INSERT INTO direct_messages (sender_id, sender_username, target_user_id, content, image_url, status)
+                               VALUES (?, ?, ?, ?, ?, 'sent') RETURNING id""",
                             (user_id, username, target_id, content, image_url)
                         )
                         dm_id = cursor.fetchone()[0]
                         db.commit()
-                        db.close()
                     except Exception as e:
                         logger.error(f"DM save error: {e}")
                         dm_id = int(time.time() * 1000) % 1000000
+                    finally:
+                        if db:
+                            try: db.close()
+                            except: pass
 
                     dm_data = {
                         "type": "private_message",
@@ -602,92 +766,99 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "target_user_id": target_id,
                         "content": content,
                         "image_url": image_url,
+                        "status": "sent",
                         "created_at": datetime.utcnow().isoformat(),
                     }
-                    # Send to target user only
-                    await manager.send_to(target_id, json.dumps(dm_data))
-                    # Send confirmation to sender
+                    # Send to target — mark delivered if they're online
+                    sent_ok = await manager.send_to(target_id, json.dumps(dm_data))
+                    if sent_ok:
+                        dm_data["status"] = "delivered"
+                        try:
+                            db2 = get_db()
+                            db2.execute("UPDATE direct_messages SET status = 'delivered', delivered = 1 WHERE id = ?", (dm_id,))
+                            db2.commit(); db2.close()
+                        except: pass
                     await websocket.send_text(json.dumps({**dm_data, "type": "dm_sent"}))
-                    logger.info(f"💌 DM: {username} → user#{target_id}")
+                    logger.info(f"💌 DM: {username} → user#{target_id} [status={dm_data['status']}]")
 
             # ═══════════════════════════════════════════
             #  HANDLE: get_dm_history
             # ═══════════════════════════════════════════
             elif event_type == "get_dm_history":
                 target_id = msg.get("target_user_id")
+                before_id = msg.get("before_id")  # cursor for infinite scroll
+                limit = min(msg.get("limit", 50), 100)
                 if target_id:
+                    db = None
                     try:
                         db = get_db()
-                        dms = db.execute(
-                            """SELECT * FROM direct_messages
-                               WHERE (sender_id = ? AND target_user_id = ?)
-                                  OR (sender_id = ? AND target_user_id = ?)
-                               ORDER BY created_at ASC LIMIT 100""",
-                            (user_id, target_id, target_id, user_id)
-                        ).fetchall()
-                        db.close()
+                        if before_id:
+                            dms = db.execute(
+                                """SELECT * FROM direct_messages
+                                   WHERE ((sender_id = ? AND target_user_id = ?)
+                                      OR (sender_id = ? AND target_user_id = ?))
+                                      AND id < ?
+                                   ORDER BY id DESC LIMIT ?""",
+                                (user_id, target_id, target_id, user_id, before_id, limit)
+                            ).fetchall()
+                        else:
+                            dms = db.execute(
+                                """SELECT * FROM direct_messages
+                                   WHERE (sender_id = ? AND target_user_id = ?)
+                                      OR (sender_id = ? AND target_user_id = ?)
+                                   ORDER BY id DESC LIMIT ?""",
+                                (user_id, target_id, target_id, user_id, limit)
+                            ).fetchall()
+                        result = [dict(d) for d in reversed(dms)]
+                        has_more = len(dms) == limit
                         await websocket.send_text(json.dumps({
                             "type": "dm_history",
                             "target_user_id": target_id,
-                            "messages": [dict(d) for d in dms],
+                            "messages": result,
+                            "has_more": has_more,
                         }))
+                        # Auto-mark received DMs as read
+                        db.execute(
+                            """UPDATE direct_messages SET status = 'read', read = 1
+                               WHERE sender_id = ? AND target_user_id = ? AND status != 'read'""",
+                            (target_id, user_id)
+                        )
+                        db.commit()
                     except Exception as e:
                         logger.error(f"DM history error: {e}")
+                    finally:
+                        if db:
+                            try: db.close()
+                            except: pass
 
             # ═══════════════════════════════════════════
             #  HANDLE: Call Signaling (Voice/Video)
             # ═══════════════════════════════════════════
-            elif event_type == "call_offer":
-                target_id = msg.get("target_user_id")
-                call_type = msg.get("call_type", "voice")  # voice or video
-                if target_id:
-                    await manager.send_to(target_id, json.dumps({
-                        "type": "incoming_call",
-                        "from_user_id": user_id,
-                        "from_username": username,
-                        "call_type": call_type,
-                        "offer": msg.get("offer"),
-                    }))
-                    logger.info(f"📞 {call_type.upper()} call: {username} → user#{target_id}")
-
-            elif event_type == "call_answer":
+            elif event_type in ["call_offer", "call_answer", "call_reject", "call_end", "call_ice", "group_call_offer"]:
                 target_id = msg.get("target_user_id")
                 if target_id:
-                    await manager.send_to(target_id, json.dumps({
-                        "type": "call_accepted",
-                        "from_user_id": user_id,
-                        "from_username": username,
-                        "answer": msg.get("answer"),
-                    }))
-
-            elif event_type == "call_reject":
-                target_id = msg.get("target_user_id")
-                if target_id:
-                    await manager.send_to(target_id, json.dumps({
-                        "type": "call_rejected",
-                        "from_user_id": user_id,
-                        "from_username": username,
-                    }))
-                    logger.info(f"📞 Call rejected by {username}")
-
-            elif event_type == "call_end":
-                target_id = msg.get("target_user_id")
-                if target_id:
-                    await manager.send_to(target_id, json.dumps({
-                        "type": "call_ended",
-                        "from_user_id": user_id,
-                        "from_username": username,
-                    }))
-                    logger.info(f"📞 Call ended by {username}")
-
-            elif event_type == "call_ice":
-                target_id = msg.get("target_user_id")
-                if target_id:
-                    await manager.send_to(target_id, json.dumps({
-                        "type": "call_ice",
-                        "candidate": msg.get("candidate"),
-                        "from_user_id": user_id,
-                    }))
+                    payload = dict(msg)
+                    payload.pop("target_user_id", None)
+                    payload["from_user_id"] = user_id
+                    payload["from_username"] = username
+                    
+                    if event_type == "call_offer" or event_type == "group_call_offer":
+                        payload["type"] = "incoming_call"
+                        if "call_type" not in payload:
+                            payload["call_type"] = "voice"
+                        logger.info(f"📞 {payload['call_type'].upper()} call: {username} -> user#{target_id}")
+                    elif event_type == "call_answer":
+                        payload["type"] = "call_accepted"
+                    elif event_type == "call_reject":
+                        payload["type"] = "call_rejected"
+                        logger.info(f"📞 Call rejected by {username}")
+                    elif event_type == "call_end":
+                        payload["type"] = "call_ended"
+                        logger.info(f"📞 Call ended by {username}")
+                    elif event_type == "call_ice":
+                        payload["type"] = "call_ice"
+                    
+                    await manager.send_to(target_id, json.dumps(payload))
 
             # ═══════════════════════════════════════════
             #  HANDLE: WebRTC Signaling (P2P Data)

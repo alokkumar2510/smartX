@@ -297,14 +297,14 @@ class NetworkBridge:
     def __init__(self) -> None:
         self.packet_engine = PacketEngine()
         self.ack_manager = ACKManager()
-        self._executor = ThreadPoolExecutor(max_workers=4)
+        self._executor = ThreadPoolExecutor(max_workers=8)
         self._tcp_connected = False
         self._udp_ready = False
 
-        # UDP packet loss simulation
-        self.udp_loss_rate: float = 0.12
-        self.udp_jitter_ms: tuple = (0, 200)
-        self.udp_corruption_rate: float = 0.02
+        # UDP packet loss simulation (production-tuned: ~5% total compound rate)
+        self.udp_loss_rate: float = 0.03
+        self.udp_jitter_ms: tuple = (0, 50)
+        self.udp_corruption_rate: float = 0.005
 
         # Stats
         self.tcp_messages_sent: int = 0

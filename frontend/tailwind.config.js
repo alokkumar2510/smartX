@@ -5,27 +5,36 @@ export default {
   theme: {
     extend: {
       colors: {
+        smartx: {
+          base:    '#05050A',
+          raised:  '#0a0a15',
+          card:    '#111120',
+          border:  'rgba(255,255,255,0.08)',
+          hover:   'rgba(255,255,255,0.05)',
+        },
+        /* legacy compat — still used in some components */
         cyber: {
-          bg: '#0a0a1a',
-          surface: '#0f0f2a',
-          card: '#141432',
-          border: '#1e1e4a',
-          hover: '#1a1a45',
+          bg:      '#05050A',
+          surface: '#0a0a15',
+          card:    '#111120',
+          border:  '#1e1e3a',
+          hover:   '#141428',
         },
         neon: {
-          cyan: '#00f0ff',
-          purple: '#b347ea',
-          pink: '#ff2d78',
-          blue: '#4d7cff',
-          green: '#00ff88',
-          orange: '#ff6b2b',
-          yellow: '#ffe500',
+          cyan:   '#93c5fd',
+          purple: 'rgba(255,255,255,0.7)',
+          pink:   '#f9a8d4',
+          blue:   '#93c5fd',
+          green:  '#34d399',
+          orange: '#fbbf24',
+          yellow: '#fcd34d',
         },
       },
       fontFamily: {
-        orbitron: ['Orbitron', 'sans-serif'],
-        poppins: ['Poppins', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans:    ['General Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        orbitron: ['General Sans', 'sans-serif'],
+        poppins:  ['General Sans', 'sans-serif'],
+        mono:    ['JetBrains Mono', 'monospace'],
       },
       boxShadow: {
         'neon-cyan': '0 0 15px rgba(0, 240, 255, 0.3), 0 0 60px rgba(0, 240, 255, 0.1)',

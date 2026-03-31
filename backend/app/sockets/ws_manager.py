@@ -86,14 +86,16 @@ class ConnectionManager:
             self.active.pop(uid, None)
             self.usernames.pop(uid, None)
 
-    async def send_to(self, user_id: int, message: str) -> None:
-        """Send a message to a specific user."""
+    async def send_to(self, user_id: int, message: str) -> bool:
+        """Send a message to a specific user. Returns True if delivered."""
         ws = self.active.get(user_id)
         if ws:
             try:
                 await ws.send_text(message)
+                return True
             except Exception:
-                pass
+                return False
+        return False
 
     async def simulate_send(self, message_data: Dict[str, Any], sender_id: int) -> None:
         """
@@ -211,7 +213,7 @@ class ConnectionManager:
             if uid == sender_id:
                 continue
 
-            drop_this = random.random() < 0.10
+            drop_this = random.random() < 0.02  # 2% per-recipient loss (was 10%)
 
             if drop_this or overall_dropped:
                 try:
@@ -232,7 +234,7 @@ class ConnectionManager:
                     pass
                 continue
 
-            jitter = random.uniform(0, 0.15)
+            jitter = random.uniform(0, 0.03)  # 0-30ms jitter (was 0-150ms)
             await asyncio.sleep(jitter)
 
             try:

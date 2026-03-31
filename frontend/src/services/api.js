@@ -1,41 +1,16 @@
-/**
- * ─── api.js ────────────────────────────────────────────
- * Axios instance with base URL, interceptors, and
- * error handling for all API calls.
- */
-import axios from 'axios';
+const _host = window.location.hostname || '127.0.0.1';
+const _apiBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, "") : `http://${_host}:8000`;
+export const API = _apiBase;
+const _wsProtocol = _apiBase.startsWith("https") ? "wss:" : "ws:";
+const _wsHost = _apiBase.replace(/^https?:\/\//, "");
+export const WS_URL = `${_wsProtocol}//${_wsHost}`;
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
-
-const api = axios.create({
-  baseURL: API_BASE,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// ─── Request Interceptor ────────────────────────────────
-api.interceptors.request.use(
-  (config) => {
-    // Attach auth token if available
-    const token = localStorage.getItem('smartchat_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// ─── Response Interceptor ───────────────────────────────
-api.interceptors.response.use(
-  (response) => response.data,
-  (error) => {
-    const message = error.response?.data?.detail || error.message || 'Network Error';
-    console.error('[API Error]', message);
-    return Promise.reject({ message, status: error.response?.status });
-  }
-);
-
-export default api;
+export const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+];
