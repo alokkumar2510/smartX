@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: smartchatx-fastapi
+    name: smartchatx-backend
     env: python
     plan: free
     buildCommand: "cd backend && pip install -r requirements.txt"
