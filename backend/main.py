@@ -133,6 +133,8 @@ async def startup():
             ("file_name",    "TEXT"),
             ("file_size",    "INTEGER DEFAULT 0"),
             ("reply_to",     "TEXT"),
+            ("reactions",    "TEXT DEFAULT '{}'"),
+            ("deleted",      "INTEGER DEFAULT 0"),
         ]
         for col, col_def in extra_cols:
             try:
@@ -407,6 +409,106 @@ async def mark_dm_read(sender_id: int, reader_id: int):
         )
         db.commit()
         return {"status": "ok"}
+    finally:
+        if db:
+            db.close()
+
+
+@app.delete("/api/dm/{message_id}")
+async def delete_dm(message_id: int, user_id: str = None, token: str = None):
+    """Soft-delete a DM (sender only). Call as DELETE /api/dm/<id>?token=<jwt>"""
+    if not token:
+        raise HTTPException(401, "Token required")
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(401, "Invalid token")
+    requester = payload["user_id"]
+    # Resolve Supabase UUID → integer id
+    db = None
+    try:
+        db = get_db()
+        if isinstance(requester, str) and not str(requester).isdigit():
+            row = db.execute("SELECT id FROM users WHERE username = ?", (payload["username"],)).fetchone()
+            if row:
+                requester = row[0]
+        msg = db.execute("SELECT sender_id, target_user_id FROM direct_messages WHERE id = ?", (message_id,)).fetchone()
+        if not msg:
+            raise HTTPException(404, "Message not found")
+        if int(msg["sender_id"]) != int(requester):
+            raise HTTPException(403, "Can only delete your own messages")
+        db.execute("UPDATE direct_messages SET deleted = 1, content = '' WHERE id = ?", (message_id,))
+        db.commit()
+        return {"status": "ok", "message_id": message_id, "target_user_id": msg["target_user_id"]}
+    finally:
+        if db:
+            db.close()
+
+
+@app.post("/api/dm/{message_id}/react")
+async def react_to_dm(message_id: int, emoji: str, token: str = None):
+    """Toggle an emoji reaction on a DM. Returns updated reactions dict."""
+    if not token:
+        raise HTTPException(401, "Token required")
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(401, "Invalid token")
+    username = payload["username"]
+    user_id = payload["user_id"]
+    db = None
+    try:
+        db = get_db()
+        if isinstance(user_id, str) and not str(user_id).isdigit():
+            row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if row:
+                user_id = row[0]
+        msg = db.execute("SELECT reactions, sender_id, target_user_id FROM direct_messages WHERE id = ? AND deleted = 0", (message_id,)).fetchone()
+        if not msg:
+            raise HTTPException(404, "Message not found")
+        reactions = json.loads(msg["reactions"] or "{}")
+        if emoji not in reactions:
+            reactions[emoji] = []
+        uid = str(user_id)
+        if uid in reactions[emoji]:
+            reactions[emoji].remove(uid)
+            if not reactions[emoji]:
+                del reactions[emoji]
+        else:
+            reactions[emoji].append(uid)
+        db.execute("UPDATE direct_messages SET reactions = ? WHERE id = ?", (json.dumps(reactions), message_id))
+        db.commit()
+        return {
+            "status": "ok",
+            "message_id": message_id,
+            "reactions": reactions,
+            "sender_id": msg["sender_id"],
+            "target_user_id": msg["target_user_id"],
+        }
+    finally:
+        if db:
+            db.close()
+
+
+@app.get("/api/dm/search")
+async def search_dms(user_id: str, target_id: int, q: str, limit: int = 20):
+    """Full-text search within a DM conversation."""
+    db = None
+    try:
+        db = get_db()
+        # Resolve UUID → int
+        if isinstance(user_id, str) and not user_id.isdigit():
+            row = db.execute("SELECT id FROM users WHERE username = ?", (user_id,)).fetchone()
+            if row:
+                user_id = row[0]
+        user_id = int(user_id)
+        dms = db.execute(
+            """SELECT * FROM direct_messages
+               WHERE ((sender_id = ? AND target_user_id = ?)
+                   OR (sender_id = ? AND target_user_id = ?))
+                  AND content LIKE ? AND deleted = 0
+               ORDER BY id DESC LIMIT ?""",
+            (user_id, target_id, target_id, user_id, f"%{q}%", limit)
+        ).fetchall()
+        return {"messages": [dict(d) for d in reversed(dms)]}
     finally:
         if db:
             db.close()
@@ -907,6 +1009,82 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         db.commit()
                     except Exception as e:
                         logger.error(f"DM history error: {e}")
+                    finally:
+                        if db:
+                            try: db.close()
+                            except: pass
+
+            # ═══════════════════════════════════════════
+            #  HANDLE: dm_delete — Soft-delete own message
+            # ═══════════════════════════════════════════
+            elif event_type == "dm_delete":
+                msg_id = msg.get("message_id")
+                target_id = msg.get("target_user_id")
+                if msg_id and target_id:
+                    db = None
+                    try:
+                        db = get_db()
+                        row = db.execute(
+                            "SELECT sender_id FROM direct_messages WHERE id = ?", (msg_id,)
+                        ).fetchone()
+                        if row and int(row["sender_id"]) == int(db_user_id):
+                            db.execute(
+                                "UPDATE direct_messages SET deleted = 1, content = '' WHERE id = ?",
+                                (msg_id,)
+                            )
+                            db.commit()
+                            notify = json.dumps({"type": "dm_deleted", "message_id": msg_id, "target_user_id": target_id})
+                            await websocket.send_text(notify)
+                            await manager.send_to(target_id, notify)
+                            logger.info(f"🗑️ DM #{msg_id} deleted by {username}")
+                    except Exception as e:
+                        logger.error(f"DM delete error: {e}")
+                    finally:
+                        if db:
+                            try: db.close()
+                            except: pass
+
+            # ═══════════════════════════════════════════
+            #  HANDLE: dm_react — Emoji reaction toggle
+            # ═══════════════════════════════════════════
+            elif event_type == "dm_react":
+                msg_id = msg.get("message_id")
+                emoji = msg.get("emoji", "")
+                target_id = msg.get("target_user_id")
+                if msg_id and emoji and target_id:
+                    db = None
+                    try:
+                        db = get_db()
+                        row = db.execute(
+                            "SELECT reactions, sender_id, target_user_id FROM direct_messages WHERE id = ? AND deleted = 0",
+                            (msg_id,)
+                        ).fetchone()
+                        if row:
+                            reactions = json.loads(row["reactions"] or "{}")
+                            if emoji not in reactions:
+                                reactions[emoji] = []
+                            uid = str(db_user_id)
+                            if uid in reactions[emoji]:
+                                reactions[emoji].remove(uid)
+                                if not reactions[emoji]:
+                                    del reactions[emoji]
+                            else:
+                                reactions[emoji].append(uid)
+                            db.execute(
+                                "UPDATE direct_messages SET reactions = ? WHERE id = ?",
+                                (json.dumps(reactions), msg_id)
+                            )
+                            db.commit()
+                            notify = json.dumps({
+                                "type": "dm_reaction",
+                                "message_id": msg_id,
+                                "reactions": reactions,
+                                "by_user_id": db_user_id,
+                            })
+                            await websocket.send_text(notify)
+                            await manager.send_to(target_id, notify)
+                    except Exception as e:
+                        logger.error(f"DM react error: {e}")
                     finally:
                         if db:
                             try: db.close()

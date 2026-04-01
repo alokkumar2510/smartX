@@ -35,7 +35,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,         // Session survives page refresh
     storageKey: 'smartchat_supabase_auth',
     storage: safeStorage,
-    detectSessionInUrl: true,     // Handles magic-link / OAuth / recovery callbacks
-    flowType: 'pkce',             // PKCE flow — prevents auth code interception attacks
+    detectSessionInUrl: false,    // Disabled — we use 6-digit OTP codes, not magic links
+    flowType: 'implicit',         // Implicit flow — enables proper 6-digit OTP code delivery
   },
 });

@@ -27,11 +27,13 @@ export function usePrivacy(userId) {
       .from('privacy_settings')
       .select('*')
       .eq('user_id', userId)
-      .single()
-      .then(({ data }) => {
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) console.warn('[usePrivacy] Load error:', error.message);
         if (data) setPrivacy({ ...DEFAULT_PRIVACY, ...data });
         setLoaded(true);
-      });
+      })
+      .catch(() => setLoaded(true));
   }, [userId]);
 
   const savePrivacy = useCallback(async (updates) => {

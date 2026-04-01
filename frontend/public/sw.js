@@ -8,9 +8,9 @@
  *  - Images → Stale-while-revalidate
  */
 
-const CACHE_NAME    = 'smartchatx-v1';
-const API_CACHE     = 'smartchatx-api-v1';
-const IMAGE_CACHE   = 'smartchatx-img-v1';
+const CACHE_NAME    = 'smartchatx-v3';
+const API_CACHE     = 'smartchatx-api-v3';
+const IMAGE_CACHE   = 'smartchatx-img-v3';
 
 // Assets to pre-cache on install
 const PRECACHE_URLS = [
@@ -45,10 +45,12 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip: non-GET, WebSocket, chrome-extension
+  // Skip: non-GET, WebSocket, chrome-extension, Supabase
   if (request.method !== 'GET') return;
   if (url.protocol === 'ws:' || url.protocol === 'wss:') return;
   if (url.protocol === 'chrome-extension:') return;
+  // Never cache Supabase requests — auth tokens, realtime, etc.
+  if (url.hostname.includes('supabase.co') || url.hostname.includes('supabase.in')) return;
 
   // Images → stale-while-revalidate
   if (request.destination === 'image') {

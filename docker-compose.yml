@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+  # ── FastAPI Backend ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartchatx-backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - smartchatx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Mediasoup SFU Server ──────────────────────────────────────
+  mediasoup:
+    build:
+      context: ./mediasoup-server
+      dockerfile: Dockerfile
+    container_name: smartchatx-mediasoup
+    restart: unless-stopped
+    env_file: ./mediasoup-server/.env
+    ports:
+      # Signaling (Nginx proxies /media/ → 3001)
+      - "127.0.0.1:3001:3001"
+      # RTC UDP range for media (must be open on VPS firewall)
+      - "40000-49999:40000-49999/udp"
+    networks:
+      - smartchatx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Mediasoup needs host networking context for correct IP discovery
+    # Alternatively set MEDIASOUP_ANNOUNCED_IP in .env
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+networks:
+  smartchatx:
+    driver: bridge

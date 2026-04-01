@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    DMPanel.jsx — Private DM + Call UI (Voice/Video) + AI Chat
-   SmartChat X v4.0
+   SmartChat X v5.0 — w/ Reactions, Deletion & Search
    ═══════════════════════════════════════════════════════════ */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { playDMSound } from './sounds';
 import { supabase } from './lib/supabase';
@@ -11,6 +11,12 @@ import FileUpload, { FileMessage } from './components/FileShare';
 import { useNetwork } from './context/NetworkContext';
 
 const API = import.meta.env.VITE_API_URL || `http://${window.location.hostname || '127.0.0.1'}:8000`;
+
+// Quick helper to grab the session token from storage
+const getToken = () => sessionStorage.getItem('token') || localStorage.getItem('auth_token') || '';
+
+// Emoji shortcuts for reaction picker
+const QUICK_EMOJIS = ['👍','❤️','😂','😮','😢','🔥','🎉','👏'];
 
 /* ─── PARTICIPANT VIDEO ───────────────────────────── */
 const ParticipantVideo = ({ stream, isVideo, label, isLocal }) => {
@@ -328,6 +334,16 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
           typingTimeout.current = setTimeout(() => setIsTyping(false), 3000);
         } else if (data.type === 'user_stop_typing' && data.user_id === targetUser?.id) {
           setIsTyping(false);
+        } else if (data.type === 'dm_deleted') {
+          // Soft-delete: replace message content with tombstone
+          setMessages(prev => prev.map(m =>
+            m.id === data.message_id ? { ...m, deleted: 1, content: '' } : m
+          ));
+        } else if (data.type === 'dm_reaction') {
+          // Update reactions dict on target message
+          setMessages(prev => prev.map(m =>
+            m.id === data.message_id ? { ...m, reactions: data.reactions } : m
+          ));
         }
       } catch {}
     };
@@ -402,6 +418,54 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
     }));
   };
 
+  // Delete own message via WS
+  const deleteMsg = useCallback((msgId) => {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({
+      type: 'dm_delete',
+      message_id: msgId,
+      target_user_id: targetUser.id,
+    }));
+  }, [ws, targetUser?.id]);
+
+  // Toggle emoji reaction via WS
+  const reactMsg = useCallback((msgId, emoji) => {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({
+      type: 'dm_react',
+      message_id: msgId,
+      emoji,
+      target_user_id: targetUser.id,
+    }));
+  }, [ws, targetUser?.id]);
+
+  // Search within conversation
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef(null);
+
+  useEffect(() => {
+    if (!searchMode) { setSearchQuery(''); setSearchResults([]); return; }
+  }, [searchMode]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return; }
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(
+          `${API}/api/dm/search?user_id=${currentUser?.id}&target_id=${targetUser?.id}&q=${encodeURIComponent(searchQuery)}&limit=30`
+        );
+        const json = await res.json();
+        setSearchResults(json.messages || []);
+      } catch {}
+      setSearching(false);
+    }, 350);
+  }, [searchQuery]);  // eslint-disable-line
+
   if (!targetUser) return null;
 
   return (
@@ -431,7 +495,15 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
             <p className="text-[9px] font-mono text-neon-cyan">🔒 Private • Encrypted Transit</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Search toggle */}
+          <button onClick={() => setSearchMode(s => !s)}
+            className="text-[11px] w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+            style={{
+              color: searchMode ? 'var(--accent)' : 'rgba(255,255,255,0.3)',
+              background: searchMode ? 'rgba(99,102,241,0.15)' : 'transparent',
+            }}
+            title="Search messages">🔍</button>
           {targetUser.id !== currentUser.id && (
             <button 
               onClick={async () => {
@@ -451,6 +523,38 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
           <button onClick={onClose} className="text-white/20 hover:text-white/50 text-xl transition-colors">✕</button>
         </div>
       </div>
+
+      {/* Search bar */}
+      {searchMode && (
+        <div className="px-3 py-2 border-b border-white/[0.04]" style={{ background: 'rgba(0,0,0,0.2)' }}>
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search messages…"
+            className="w-full px-3 py-1.5 rounded-lg text-xs outline-none"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-1)' }}
+          />
+          {searching && <p className="text-[9px] text-center mt-1 text-white/20">Searching…</p>}
+          {!searching && searchQuery && searchResults.length === 0 && (
+            <p className="text-[9px] text-center mt-1 text-white/20">No messages found</p>
+          )}
+          {searchResults.length > 0 && (
+            <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+              {searchResults.map(m => (
+                <div key={m.id}
+                  className="px-2 py-1 rounded-lg text-[10px] cursor-pointer transition-colors"
+                  style={{ background: 'rgba(99,102,241,0.08)', color: 'var(--text-2)' }}
+                  onClick={() => setSearchMode(false)}
+                >
+                  <span className="text-[9px]" style={{ color: 'var(--text-3)' }}>{m.sender_username}: </span>
+                  {m.content}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div
@@ -480,47 +584,126 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
         {messages.map((msg, i) => {
           const isOwn = msg.sender_id === currentUser?.id;
           const ctype = msg.content_type;
+          const isDeleted = msg.deleted === 1 || msg.deleted === true;
+          const reactions = msg.reactions
+            ? (typeof msg.reactions === 'string' ? JSON.parse(msg.reactions) : msg.reactions)
+            : {};
+          const hasReactions = Object.keys(reactions).length > 0;
+
           return (
             <motion.div
               key={msg.id || i}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}
+              className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group relative`}
+              style={{ marginBottom: hasReactions ? '14px' : undefined }}
             >
               {/* Render voice messages */}
-              {ctype === 'voice' ? (
+              {!isDeleted && ctype === 'voice' ? (
                 <VoicePlayer url={msg.voice_url} isOwn={isOwn} duration={msg.voice_duration} />
-              ) : ctype === 'file' ? (
+              ) : !isDeleted && ctype === 'file' ? (
                 <FileMessage url={msg.file_url} name={msg.file_name} size={msg.file_size} isOwn={isOwn} />
               ) : (
-                <div className={`max-w-[85%] px-3 py-2 rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} relative`}
-                  style={{
-                    background: isOwn ? 'var(--accent)' : 'var(--bg-hover)',
-                    boxShadow: isOwn ? '0 2px 12px rgba(99,102,241,0.25)' : 'none',
-                  }}>
-                  {msg.reply_to && (
-                    <div className="text-[9px] border-l-2 pl-2 mb-1 italic opacity-60"
-                         style={{ borderColor: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--accent)', color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}>
-                      ↩ Replying...
-                    </div>
-                  )}
-                  {!isOwn && <p className="text-[9px] font-medium mb-0.5" style={{ color: 'var(--accent)' }}>{msg.sender_username}</p>}
-                  <p className="text-xs leading-relaxed" style={{ color: isOwn ? '#fff' : 'var(--text-1)' }}>{msg.content}</p>
-                  <div className="flex items-center justify-between mt-1 gap-2">
-                    <p className="text-[8px]" style={{ color: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--text-3)' }}>
-                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </p>
-                    <div className="flex items-center gap-1">
-                      {isOwn && (
-                        <span className="text-[8px]" style={{ color: msg.status === 'read' ? '#a5f3fc' : 'rgba(255,255,255,0.4)' }}>
-                          {msg.status === 'read' ? '✓✓' : msg.status === 'delivered' ? '✓✓' : '✓'}
-                        </span>
-                      )}
-                      <button onClick={() => setReplyTo(msg)}
-                        className="text-[9px] opacity-0 group-hover:opacity-60 transition-opacity hover:opacity-100"
-                        style={{ color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}>↩</button>
+                <div className="flex flex-col" style={{ maxWidth: '85%', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                  <div
+                    className={`px-3 py-2 rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} relative`}
+                    style={{
+                      background: isDeleted ? 'rgba(255,255,255,0.04)' : isOwn ? 'var(--accent)' : 'var(--bg-hover)',
+                      boxShadow: isOwn && !isDeleted ? '0 2px 12px rgba(99,102,241,0.25)' : 'none',
+                      border: isDeleted ? '1px dashed rgba(255,255,255,0.1)' : 'none',
+                    }}>
+                    {msg.reply_to && !isDeleted && (
+                      <div className="text-[9px] border-l-2 pl-2 mb-1 italic opacity-60"
+                           style={{ borderColor: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--accent)', color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}>
+                        ↩ Replying…
+                      </div>
+                    )}
+                    {!isOwn && !isDeleted && <p className="text-[9px] font-medium mb-0.5" style={{ color: 'var(--accent)' }}>{msg.sender_username}</p>}
+                    {isDeleted ? (
+                      <p className="text-[10px] italic" style={{ color: 'rgba(255,255,255,0.25)' }}>🗑️ Message deleted</p>
+                    ) : (
+                      <p className="text-xs leading-relaxed" style={{ color: isOwn ? '#fff' : 'var(--text-1)' }}>{msg.content}</p>
+                    )}
+                    <div className="flex items-center justify-between mt-1 gap-2">
+                      <p className="text-[8px]" style={{ color: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--text-3)' }}>
+                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        {isOwn && !isDeleted && (
+                          <span className="text-[8px]" style={{ color: msg.status === 'read' ? '#a5f3fc' : 'rgba(255,255,255,0.4)' }}>
+                            {msg.status === 'read' ? '✓✓' : msg.status === 'delivered' ? '✓✓' : '✓'}
+                          </span>
+                        )}
+                        {!isDeleted && (
+                          <>
+                            {/* Reply */}
+                            <button onClick={() => setReplyTo(msg)}
+                              className="text-[9px] opacity-0 group-hover:opacity-60 transition-opacity hover:opacity-100"
+                              style={{ color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}>↩</button>
+                            {/* React */}
+                            <div className="relative">
+                              <button
+                                className="text-[9px] opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+                                style={{ color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  const el = e.currentTarget.nextSibling;
+                                  el.style.display = el.style.display === 'flex' ? 'none' : 'flex';
+                                }}
+                              >😊</button>
+                              <div
+                                style={{ display: 'none', position: 'absolute', bottom: '120%', right: 0, zIndex: 99 }}
+                                className="flex gap-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-1.5 shadow-2xl"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                {QUICK_EMOJIS.map(em => (
+                                  <button key={em}
+                                    className="text-sm leading-none hover:scale-125 transition-transform"
+                                    onClick={ev => {
+                                      reactMsg(msg.id, em);
+                                      ev.currentTarget.closest('[style]').style.display = 'none';
+                                    }}
+                                  >{em}</button>
+                                ))}
+                              </div>
+                            </div>
+                            {/* Delete (own only) */}
+                            {isOwn && (
+                              <button
+                                onClick={() => deleteMsg(msg.id)}
+                                className="text-[9px] opacity-0 group-hover:opacity-50 hover:opacity-100 transition-opacity"
+                                style={{ color: '#f87171' }}
+                                title="Delete message"
+                              >🗑</button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  {/* Reaction bubbles */}
+                  {hasReactions && (
+                    <div className={`flex flex-wrap gap-1 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                      {Object.entries(reactions).map(([em, users]) => (
+                        <button
+                          key={em}
+                          onClick={() => reactMsg(msg.id, em)}
+                          className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-all hover:scale-110"
+                          style={{
+                            background: users.includes(String(currentUser?.id))
+                              ? 'rgba(99,102,241,0.25)'
+                              : 'rgba(255,255,255,0.07)',
+                            border: users.includes(String(currentUser?.id))
+                              ? '1px solid rgba(99,102,241,0.4)'
+                              : '1px solid rgba(255,255,255,0.1)',
+                          }}
+                        >
+                          <span>{em}</span>
+                          <span style={{ color: 'var(--text-3)' }}>{users.length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>

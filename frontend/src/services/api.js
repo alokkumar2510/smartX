@@ -5,6 +5,16 @@ const _wsProtocol = _apiBase.startsWith("https") ? "wss:" : "ws:";
 const _wsHost = _apiBase.replace(/^https?:\/\//, "");
 export const WS_URL = `${_wsProtocol}//${_wsHost}`;
 
+// ── Mediasoup SFU Server URL ─────────────────────────────────
+// Production: Nginx proxies /media → port 3001 — connect to same origin + /media
+// Development: direct to :3001
+export const MEDIA_URL = import.meta.env.VITE_MEDIA_URL
+  ? import.meta.env.VITE_MEDIA_URL
+  : _apiBase.startsWith('https')
+    ? _apiBase.replace(/:\d+$/, '') // strip port, Nginx handles it
+    : `http://${_host}:3001`;
+
+
 export const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -14,3 +24,4 @@ export const ICE_SERVERS = [
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
+

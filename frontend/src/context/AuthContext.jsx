@@ -70,34 +70,81 @@ export function AuthProvider({ children }) {
 
   // ── Session bootstrap ──────────────────────────────────────────────
   useEffect(() => {
+    let mounted = true;
+    let sessionClearedDueToTimeout = false;
+
+    /** Check if a Supabase session JWT has expired */
+    const isSessionExpired = (s) => {
+      if (!s?.expires_at) return false;
+      // expires_at is in seconds since epoch
+      return s.expires_at * 1000 < Date.now();
+    };
+
     const init = async () => {
       try {
         const { data: { session: s } } = await Promise.race([
           supabase.auth.getSession(),
-          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000)),
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000)),
         ]);
-        if (s) {
-          setSession(s); setToken(s.access_token);
-          setUser(await syncProfile(s.user));
+        if (mounted && s) {
+          // Reject expired sessions — force re-login
+          if (isSessionExpired(s)) {
+            console.warn('[Auth] Session expired, clearing…');
+            await supabase.auth.signOut().catch(() => {});
+            try { window.localStorage.removeItem('smartchat_supabase_auth'); } catch {}
+          } else {
+            setSession(s); setToken(s.access_token);
+            setUser(await syncProfile(s.user));
+          }
         }
       } catch (e) {
         console.warn('[Auth] Session bootstrap:', e.message);
+        // Clear any stale session data on timeout
+        if (e.message === 'timeout') {
+          sessionClearedDueToTimeout = true;
+          try { window.localStorage.removeItem('smartchat_supabase_auth'); } catch {}
+          // Also try a proper sign-out to clear Supabase internal state
+          supabase.auth.signOut().catch(() => {});
+        }
       }
-      setLoading(false);
+      if (mounted) setLoading(false);
     };
     init();
 
+    // Safety fallback — never stay loading for more than 6 seconds
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 6000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
+      // If we cleared session due to timeout, ignore stale SIGNED_IN events
+      // (they may fire from a cached session we just invalidated)
+      if (sessionClearedDueToTimeout && event === 'SIGNED_IN') {
+        console.warn('[Auth] Ignoring stale SIGNED_IN after timeout cleanup');
+        return;
+      }
       if (s) {
-        setSession(s); setToken(s.access_token);
-        if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
-          setUser(await syncProfile(s.user));
+        // Always validate session isn't expired
+        if (isSessionExpired(s)) {
+          setSession(null); setToken(null); setUser(null);
+          await supabase.auth.signOut().catch(() => {});
+        } else {
+          setSession(s); setToken(s.access_token);
+          if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
+            setUser(await syncProfile(s.user));
+          }
         }
       } else {
         setSession(null); setToken(null); setUser(null);
       }
+      if (mounted) setLoading(false);
     });
-    return () => subscription.unsubscribe();
+
+    return () => {
+      mounted = false;
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, [syncProfile]);
 
   // ── OTP Actions ────────────────────────────────────────────────────
@@ -106,12 +153,21 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        shouldCreateUser: true
+        shouldCreateUser: true,
+        // Do NOT set emailRedirectTo — this forces Supabase to send
+        // a 6-digit OTP code instead of a magic link URL
       }
     });
     
     if (error) {
-      throw new Error(error.message || 'Failed to send code');
+      // Provide user-friendly messages for common errors
+      if (error.message?.includes('rate limit') || error.status === 429) {
+        throw new Error('Too many requests. Please wait a few minutes before trying again.');
+      }
+      if (error.message?.includes('invalid')) {
+        throw new Error('Please enter a valid email address.');
+      }
+      throw new Error(error.message || 'Failed to send code. Please try again.');
     }
     
     const cooldownUntil = Date.now() + 60_000;
