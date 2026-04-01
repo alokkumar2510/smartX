@@ -102,55 +102,33 @@ export function AuthProvider({ children }) {
 
   // ── OTP Actions ────────────────────────────────────────────────────
 
-  /**
-   * Step 1: Ask Edge Function to send a 6-digit OTP via Brevo to the email.
-   * Returns { cooldownUntil: number }
-   */
   const sendOtp = async (email) => {
-    const res = await fetch(`${FN_BASE}/send-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true
+      }
     });
-    const data = await res.json();
-    if (!res.ok) {
-      const err = new Error(data.error || 'Failed to send code');
-      if (res.status === 429) err.cooldownRemaining = data.cooldownRemaining;
-      throw err;
+    
+    if (error) {
+      throw new Error(error.message || 'Failed to send code');
     }
-    const cooldownUntil = data.cooldownUntil || (Date.now() + 60_000);
+    
+    const cooldownUntil = Date.now() + 60_000;
     otpCooldownRef.current = cooldownUntil;
     return { cooldownUntil };
   };
 
-  /**
-   * Step 2: Send the 6-digit code to the Edge Function for verification.
-   * On success, the function returns a token we use to sign in via Supabase.
-   */
   const verifyOtp = async (email, code) => {
-    const res = await fetch(`${FN_BASE}/verify-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, code: String(code).trim() }),
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: String(code).trim(),
+      type: 'email'
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Invalid code. Please try again.');
+    
+    if (error) throw new Error(error.message || 'Invalid code. Please try again.');
+    if (!data.session) throw new Error('Failed to retrieve session.');
 
-    // Use the action_link (magic link) to exchange for a Supabase session
-    // The backend generates a magic link token — we use verifyOtp with the hash
-    if (data.action_link) {
-      const url       = new URL(data.action_link);
-      const tokenHash = url.searchParams.get('token_hash') ||
-                        new URLSearchParams(url.hash.slice(1)).get('access_token');
-
-      if (tokenHash) {
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type: 'magiclink',
-        });
-        if (error) throw new Error(error.message);
-      }
-    }
     return data;
   };
 
