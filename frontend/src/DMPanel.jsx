@@ -290,34 +290,36 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
   }, [targetUser, ws]);
 
   // Listen for DM events
+  // NOTE: messages.length intentionally omitted from deps — we use functional
+  // updates (prev =>) so we never need the current state value as a dependency.
+  // This prevents the listener from being re-registered on every new message.
   useEffect(() => {
     if (!ws) return;
     const handler = (e) => {
       try {
         const data = JSON.parse(e.data);
         if (data.type === 'dm_history' && data.target_user_id === targetUser?.id) {
-          if (data.messages?.[0]?.id && messages.length > 0) {
-            // Prepend older messages (infinite scroll)
-            setMessages(prev => {
+          setMessages(prev => {
+            // Infinite scroll: if we already have messages, prepend older ones
+            if (data.messages?.[0]?.id && prev.length > 0) {
               const existingIds = new Set(prev.map(m => m.id));
               const newMsgs = data.messages.filter(m => !existingIds.has(m.id));
               return [...newMsgs, ...prev];
-            });
-          } else {
-            setMessages(data.messages || []);
-          }
+            }
+            return data.messages || [];
+          });
           setHasMore(data.has_more || false);
           setLoadingMore(false);
         } else if (data.type === 'private_message' && data.sender_id === targetUser?.id) {
           setMessages(prev => [...prev, data]);
           playDMSound();
           // Auto-send read receipt
-          ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id, message_ids: [data.id] }));
+          if (ws.readyState === 1)
+            ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id, message_ids: [data.id] }));
         } else if (data.type === 'dm_sent' && data.target_user_id === targetUser?.id) {
           setMessages(prev => [...prev, data]);
         } else if (data.type === 'messages_read' && data.reader_id === targetUser?.id) {
-          // Update ticks to read
-          setMessages(prev => prev.map(m => 
+          setMessages(prev => prev.map(m =>
             m.sender_id === currentUser?.id ? { ...m, status: 'read' } : m
           ));
         } else if (data.type === 'user_typing' && data.user_id === targetUser?.id) {
@@ -331,7 +333,8 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
     };
     ws.addEventListener('message', handler);
     return () => ws.removeEventListener('message', handler);
-  }, [ws, targetUser, currentUser, messages.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws, targetUser?.id, currentUser?.id]);
 
   // Auto-scroll on new messages
   useEffect(() => {
