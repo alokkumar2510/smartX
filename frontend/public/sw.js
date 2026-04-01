@@ -8,9 +8,9 @@
  *  - Images → Stale-while-revalidate
  */
 
-const CACHE_NAME    = 'smartchatx-v4';
-const API_CACHE     = 'smartchatx-api-v4';
-const IMAGE_CACHE   = 'smartchatx-img-v4';
+const CACHE_NAME    = 'smartchatx-v5';
+const API_CACHE     = 'smartchatx-api-v5';
+const IMAGE_CACHE   = 'smartchatx-img-v5';
 
 // Assets to pre-cache on install
 const PRECACHE_URLS = [

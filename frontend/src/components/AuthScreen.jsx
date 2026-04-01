@@ -1,149 +1,126 @@
 /**
  * SmartChatX — Auth Screen
- * Step 1: Enter email → Step 2: Enter 6-digit OTP code
- * Sends via Brevo SMTP (configured in Supabase Dashboard)
+ *
+ * LOGIN  tab: email + password  → instant access
+ * SIGNUP tab: email + username + password → 6-digit OTP verification
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import CyberBg from './CyberBg';
 
-// ── Password reset page (kept for recovery URLs) ────────────────────────────
+// ── Kept for backward-compat imports in App.jsx ──────────────────────────────
 export function ResetPasswordPage({ onDone }) {
-  useEffect(() => {
-    // OTP flow doesn't use password reset — redirect to login
-    onDone?.();
-  }, [onDone]);
+  useEffect(() => { onDone?.(); }, [onDone]);
   return null;
 }
+export function EmailVerificationBanner() { return null; }
 
-// ── Email verification banner (no longer needed with OTP) ────────────────────
-export function EmailVerificationBanner({ email }) {
-  const { logout } = useAuth();
-  return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative" style={{ background: '#05050A' }}>
-      <CyberBg />
-      <div className="fixed inset-0 bg-cyber-grid pointer-events-none z-0" />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: 'spring', damping: 24 }}
-        className="glass-card p-10 w-full max-w-[420px] relative z-10 text-center"
-      >
-        <motion.div animate={{ y: [0, -6, 0] }} transition={{ repeat: Infinity, duration: 2.5 }}
-          style={{ fontSize: 44, marginBottom: 20 }}>📧</motion.div>
-        <h2 className="hero-heading-gradient" style={{ fontSize: 26, fontWeight: 600, marginBottom: 12 }}>
-          Verifying…
-        </h2>
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 28 }}>
-          Please wait while we verify your session.
-        </p>
-        <button onClick={logout}
-          style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', cursor: 'pointer' }}>
-          ← Back to login
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
-// ── Alert component ───────────────────────────────────────────────────────────
+// ── Alert ─────────────────────────────────────────────────────────────────────
 function Alert({ type, msg }) {
-  const isError = type === 'error';
+  if (!msg) return null;
+  const isErr = type === 'error';
   return (
     <motion.div
-      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
       style={{
-        marginBottom: 16, padding: '10px 14px',
-        borderRadius: 10, fontSize: 12,
-        fontFamily: 'var(--font-mono)',
-        background: isError ? 'rgba(248,113,113,0.08)' : 'rgba(52,211,153,0.08)',
-        border: isError ? '1px solid rgba(248,113,113,0.20)' : '1px solid rgba(52,211,153,0.20)',
-        color: isError ? '#f87171' : '#34d399',
-      }}>
-      {isError ? '⚠ ' : '✓ '}{msg}
+        marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+        fontSize: 12, fontFamily: 'var(--font-mono)',
+        background: isErr ? 'rgba(248,113,113,0.08)' : 'rgba(52,211,153,0.08)',
+        border: isErr ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(52,211,153,0.25)',
+        color: isErr ? '#f87171' : '#34d399',
+      }}
+    >
+      {isErr ? '⚠ ' : '✓ '}{msg}
     </motion.div>
   );
 }
 
-// ── 6-Box OTP Input ───────────────────────────────────────────────────────────
+// ── Styled input ───────────────────────────────────────────────────────────────
+function Field({ label, type = 'text', value, onChange, placeholder, autoFocus, disabled, id, helpText, rightSlot }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 11, fontFamily: 'var(--font-mono)',
+                      color: 'rgba(255,255,255,0.4)', marginBottom: 6, textTransform: 'uppercase',
+                      letterSpacing: '0.08em' }}>
+        {label}
+      </label>
+      <div style={{ position: 'relative' }}>
+        <input
+          id={id} type={type} value={value} onChange={e => onChange(e.target.value)}
+          placeholder={placeholder} autoFocus={autoFocus} disabled={disabled}
+          autoComplete={type === 'password' ? 'current-password' : 'off'}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            padding: rightSlot ? '12px 48px 12px 14px' : '12px 14px',
+            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 12, color: '#fff', fontSize: 14, outline: 'none',
+            fontFamily: 'var(--font-sans)', transition: 'border-color 0.2s',
+          }}
+          onFocus={e => { e.target.style.borderColor = 'rgba(99,102,241,0.6)'; }}
+          onBlur={e  => { e.target.style.borderColor = 'rgba(255,255,255,0.10)'; }}
+        />
+        {rightSlot && (
+          <div style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)' }}>
+            {rightSlot}
+          </div>
+        )}
+      </div>
+      {helpText && <p style={{ margin: '5px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.3)',
+                               fontFamily: 'var(--font-mono)' }}>{helpText}</p>}
+    </div>
+  );
+}
+
+// ── 6-box OTP input ───────────────────────────────────────────────────────────
 function OtpInput({ value, onChange, disabled }) {
-  const inputs = useRef([]);
+  const refs = useRef([]);
   const digits = Array.from({ length: 6 }, (_, i) => value[i] || '');
 
-  const handleChange = (i, ch) => {
-    if (!/^\d?$/.test(ch)) return; // digits only
-    const next = [...digits];
-    next[i] = ch;
+  const update = (i, ch) => {
+    if (!/^\d?$/.test(ch)) return;
+    const next = [...digits]; next[i] = ch;
     onChange(next.join(''));
-    // Auto-advance
-    if (ch && i < 5) {
-      setTimeout(() => inputs.current[i + 1]?.focus(), 0);
-    }
+    if (ch && i < 5) setTimeout(() => refs.current[i + 1]?.focus(), 0);
   };
 
   const handleKeyDown = (i, e) => {
     if (e.key === 'Backspace') {
       if (!digits[i] && i > 0) {
-        const next = [...digits];
-        next[i - 1] = '';
+        const next = [...digits]; next[i - 1] = '';
         onChange(next.join(''));
-        setTimeout(() => inputs.current[i - 1]?.focus(), 0);
+        setTimeout(() => refs.current[i - 1]?.focus(), 0);
       }
-    } else if (e.key === 'ArrowLeft' && i > 0) {
-      inputs.current[i - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && i < 5) {
-      inputs.current[i + 1]?.focus();
-    }
+    } else if (e.key === 'ArrowLeft'  && i > 0) refs.current[i - 1]?.focus();
+    else if   (e.key === 'ArrowRight' && i < 5) refs.current[i + 1]?.focus();
   };
 
   const handlePaste = (e) => {
     e.preventDefault();
-    const pasted = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
-    if (pasted) {
-      onChange(pasted.padEnd(6, '').slice(0, 6));
-      // Focus the last filled box
-      const lastIdx = Math.min(pasted.length - 1, 5);
-      setTimeout(() => inputs.current[lastIdx]?.focus(), 0);
-    }
+    const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    onChange(digits.padEnd(6, '').slice(0, 6));
+    if (digits.length > 0) setTimeout(() => refs.current[Math.min(digits.length, 5)]?.focus(), 0);
   };
 
   return (
-    <div style={{ display: 'flex', gap: 10, justifyContent: 'center', margin: '24px 0' }}>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <motion.input
-          key={i}
-          ref={el => inputs.current[i] = el}
-          type="text"
-          inputMode="numeric"
-          pattern="\d*"
+    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', margin: '8px 0 20px' }}>
+      {digits.map((d, i) => (
+        <input key={i}
+          ref={el => refs.current[i] = el}
+          type="text" inputMode="numeric" pattern="\d*"
+          value={d} disabled={disabled}
           maxLength={1}
-          value={digits[i]}
-          onChange={e => handleChange(i, e.target.value)}
+          onChange={e => update(i, e.target.value.replace(/\D/g, ''))}
           onKeyDown={e => handleKeyDown(i, e)}
-          onPaste={i === 0 ? handlePaste : undefined}
-          onFocus={e => e.target.select()}
-          disabled={disabled}
-          whileFocus={{ scale: 1.08 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          onPaste={handlePaste}
           style={{
-            width: 48,
-            height: 58,
-            textAlign: 'center',
-            fontSize: 22,
-            fontWeight: 700,
-            fontFamily: 'var(--font-mono)',
-            borderRadius: 12,
-            background: digits[i]
-              ? 'rgba(99,102,241,0.12)'
-              : 'rgba(255,255,255,0.04)',
-            border: digits[i]
-              ? '2px solid rgba(99,102,241,0.55)'
-              : '2px solid rgba(255,255,255,0.08)',
-            color: digits[i] ? '#fff' : 'rgba(255,255,255,0.3)',
-            outline: 'none',
-            transition: 'all 0.18s ease',
-            caretColor: 'transparent',
-            opacity: disabled ? 0.5 : 1,
+            width: 44, height: 52, textAlign: 'center', fontSize: 22, fontWeight: 700,
+            background: 'rgba(255,255,255,0.05)',
+            border: d ? '2px solid rgba(99,102,241,0.7)' : '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 12, color: '#fff', outline: 'none',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+            boxShadow: d ? '0 0 12px rgba(99,102,241,0.25)' : 'none',
           }}
         />
       ))}
@@ -151,383 +128,335 @@ function OtpInput({ value, onChange, disabled }) {
   );
 }
 
-// ── Resend Timer ──────────────────────────────────────────────────────────────
-function ResendTimer({ cooldownUntil, onResend, loading }) {
-  const [remaining, setRemaining] = useState(0);
-
-  useEffect(() => {
-    const update = () => {
-      const r = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
-      setRemaining(r);
-    };
-    update();
-    const iv = setInterval(update, 1000);
-    return () => clearInterval(iv);
-  }, [cooldownUntil]);
-
-  if (remaining > 0) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        style={{ textAlign: 'center', marginTop: 16 }}
-      >
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '8px 16px', borderRadius: 999,
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.06)',
-        }}>
-          {/* Arc countdown */}
-          <svg width="18" height="18" viewBox="0 0 18 18" style={{ transform: 'rotate(-90deg)' }}>
-            <circle cx="9" cy="9" r="7" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="2" />
-            <motion.circle
-              cx="9" cy="9" r="7" fill="none"
-              stroke="rgba(99,102,241,0.6)" strokeWidth="2"
-              strokeLinecap="round"
-              strokeDasharray={2 * Math.PI * 7}
-              strokeDashoffset={2 * Math.PI * 7 * (1 - remaining / 60)}
-              style={{ transition: 'stroke-dashoffset 1s linear' }}
-            />
-          </svg>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.35)' }}>
-            Resend in {remaining}s
-          </span>
-        </div>
-      </motion.div>
-    );
-  }
-
+// ── Submit button ─────────────────────────────────────────────────────────────
+function SubmitBtn({ children, onClick, loading, disabled }) {
   return (
-    <div style={{ textAlign: 'center', marginTop: 16 }}>
-      <button
-        onClick={onResend}
-        disabled={loading}
-        style={{
-          fontSize: 12, fontFamily: 'var(--font-mono)',
-          color: loading ? 'rgba(255,255,255,0.25)' : 'rgba(99,102,241,0.8)',
-          background: 'none', border: 'none', cursor: loading ? 'default' : 'pointer',
-          textDecoration: 'underline', textUnderlineOffset: 3,
-          transition: 'color 0.2s',
-        }}
-        onMouseEnter={e => !loading && (e.currentTarget.style.color = '#818cf8')}
-        onMouseLeave={e => !loading && (e.currentTarget.style.color = 'rgba(99,102,241,0.8)')}
-      >
-        {loading ? '⏳ Sending…' : '📨 Resend code'}
-      </button>
+    <motion.button
+      whileHover={!disabled ? { scale: 1.02 } : {}}
+      whileTap={!disabled   ? { scale: 0.98 } : {}}
+      onClick={onClick}
+      disabled={disabled || loading}
+      style={{
+        width: '100%', padding: '14px 0', borderRadius: 14, border: 'none',
+        cursor: disabled || loading ? 'not-allowed' : 'pointer',
+        fontWeight: 700, fontSize: 15, letterSpacing: '0.02em',
+        background: disabled || loading
+          ? 'rgba(99,102,241,0.3)'
+          : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+        color: '#fff',
+        boxShadow: disabled || loading ? 'none' : '0 0 24px rgba(99,102,241,0.35)',
+        transition: 'all 0.2s',
+      }}
+    >
+      {loading ? '⏳ Please wait…' : children}
+    </motion.button>
+  );
+}
+
+// ── Tab bar ───────────────────────────────────────────────────────────────────
+function Tabs({ active, onChange }) {
+  return (
+    <div style={{
+      display: 'flex', background: 'rgba(255,255,255,0.04)',
+      borderRadius: 12, padding: 4, marginBottom: 28, gap: 4,
+    }}>
+      {['login', 'signup'].map(tab => (
+        <button key={tab} onClick={() => onChange(tab)}
+          style={{
+            flex: 1, padding: '9px 0', borderRadius: 9, border: 'none', cursor: 'pointer',
+            fontWeight: 600, fontSize: 13, letterSpacing: '0.03em',
+            background: active === tab
+              ? 'linear-gradient(135deg, rgba(99,102,241,0.5), rgba(139,92,246,0.4))'
+              : 'transparent',
+            color: active === tab ? '#fff' : 'rgba(255,255,255,0.35)',
+            boxShadow: active === tab ? '0 0 12px rgba(99,102,241,0.2)' : 'none',
+            transition: 'all 0.2s',
+          }}>
+          {tab === 'login' ? '🔑 Login' : '✨ Sign Up'}
+        </button>
+      ))}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  MAIN AUTH SCREEN — Step 1 (Email) + Step 2 (OTP)
-// ═══════════════════════════════════════════════════════════════════════════
-const AuthScreen = () => {
-  const { sendOtp, verifyOtp, resendOtp } = useAuth();
+// ══════════════════════════════════════════════════════════════════════════════
+//  LOGIN PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+function LoginPanel() {
+  const { login } = useAuth();
+  const [email, setEmail]     = useState('');
+  const [password, setPass]   = useState('');
+  const [showPass, setShow]   = useState(false);
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState('');
 
-  // ── State machine: idle → sending → otp_sent → verifying → done
-  const [step, setStep]           = useState('idle'); // 'idle' | 'sending' | 'otp_sent' | 'verifying'
-  const [email, setEmail]         = useState('');
-  const [otp, setOtp]             = useState('');
-  const [error, setError]         = useState('');
-  const [success, setSuccess]     = useState('');
-  const [cooldownUntil, setCooldownUntil] = useState(0);
-  const emailInputRef             = useRef(null);
-  const isSending                 = step === 'sending';
-  const isVerifying               = step === 'verifying';
+  const handleSubmit = useCallback(async (e) => {
+    e?.preventDefault();
+    if (busy) return;
+    setError('');
+    const em = email.trim().toLowerCase();
+    if (!em.includes('@')) { setError('Please enter a valid email address.'); return; }
+    if (!password)         { setError('Please enter your password.'); return; }
+    setBusy(true);
+    try {
+      await login(em, password);
+      // onAuthStateChange in AuthContext fires → isLoggedIn → dashboard
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [email, password, busy, login]);
 
-  // Focus email input on mount
+  return (
+    <form onSubmit={handleSubmit} autoComplete="on">
+      <AnimatePresence mode="wait">
+        {error && <Alert key="err" type="error" msg={error} />}
+      </AnimatePresence>
+
+      <Field label="Email" type="email" value={email} onChange={setEmail}
+             placeholder="you@example.com" autoFocus id="login-email"
+             disabled={busy} />
+
+      <Field label="Password" type={showPass ? 'text' : 'password'}
+             value={password} onChange={setPass}
+             placeholder="Your password" id="login-password" disabled={busy}
+             rightSlot={
+               <button type="button" onClick={() => setShow(v => !v)}
+                 style={{ background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'rgba(255,255,255,0.35)', fontSize: 16 }}>
+                 {showPass ? '🙈' : '👁'}
+               </button>
+             } />
+
+      <div style={{ height: 8 }} />
+      <SubmitBtn loading={busy}>Sign In →</SubmitBtn>
+    </form>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SIGNUP PANEL  (Step 1: form → Step 2: OTP)
+// ══════════════════════════════════════════════════════════════════════════════
+function SignupPanel() {
+  const { signUp, verifyEmailOtp } = useAuth();
+
+  // Step state
+  const [step, setStep]       = useState('form'); // 'form' | 'sending' | 'otp'
+  const [email, setEmail]     = useState('');
+  const [username, setUname]  = useState('');
+  const [password, setPass]   = useState('');
+  const [confirmPw, setConf]  = useState('');
+  const [showPass, setShow]   = useState(false);
+  const [otp, setOtp]         = useState('');
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Auto-submit when all 6 digits filled
   useEffect(() => {
-    setTimeout(() => emailInputRef.current?.focus(), 100);
-  }, []);
-
-  // Auto-submit OTP when all 6 digits are filled
-  useEffect(() => {
-    if (otp.length === 6 && step === 'otp_sent') {
+    if (otp.length === 6 && step === 'otp' && !busy) {
       handleVerify();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otp]);
 
-  const handleSendOtp = useCallback(async (e) => {
+  const handleSignUp = useCallback(async (e) => {
     e?.preventDefault();
-    if (isSending) return;
+    if (busy) return;
     setError(''); setSuccess('');
-    const cleaned = email.trim().toLowerCase();
-    if (!cleaned || !cleaned.includes('@')) {
-      setError('Please enter a valid email address');
-      return;
-    }
-    setStep('sending');
+
+    const em = email.trim().toLowerCase();
+    const un = username.trim();
+
+    if (!em.includes('@'))       { setError('Please enter a valid email address.'); return; }
+    if (un.length < 3)           { setError('Username must be at least 3 characters.'); return; }
+    if (/\s/.test(un))           { setError('Username cannot contain spaces.'); return; }
+    if (password.length < 8)     { setError('Password must be at least 8 characters.'); return; }
+    if (password !== confirmPw)  { setError('Passwords do not match.'); return; }
+
+    setBusy(true); setStep('sending');
     try {
-      const { cooldownUntil: until } = await sendOtp(cleaned);
-      setCooldownUntil(until);
-      setOtp('');
-      setStep('otp_sent');
-      setSuccess(`Code sent to ${cleaned} — check your inbox`);
+      await signUp(em, password, un);
+      setStep('otp');
+      setSuccess(`Verification code sent to ${em} — check your inbox!`);
     } catch (err) {
-      setError(err.message || 'Failed to send code. Try again.');
-      setStep('idle');
+      setError(err.message);
+      setStep('form');
+    } finally {
+      setBusy(false);
     }
-  }, [email, isSending, sendOtp]);
+  }, [email, username, password, confirmPw, busy, signUp]);
 
   const handleVerify = useCallback(async () => {
-    if (isVerifying) return;
+    if (busy || otp.length < 6) return;
     setError(''); setSuccess('');
-    setStep('verifying');
+    setBusy(true);
     try {
-      await verifyOtp(email.trim().toLowerCase(), otp);
-      // onAuthStateChange in AuthContext will fire → user gets set → App redirects
+      await verifyEmailOtp(email.trim().toLowerCase(), otp);
+      // onAuthStateChange fires → user logged in → dashboard
     } catch (err) {
-      setError(err.message || 'Invalid code. Please try again.');
+      setError(err.message);
       setOtp('');
-      setStep('otp_sent');
+      setBusy(false);
     }
-  }, [email, otp, isVerifying, verifyOtp]);
+  }, [email, otp, busy, verifyEmailOtp]);
 
-  const handleResend = useCallback(async () => {
-    setError(''); setSuccess('');
-    try {
-      setStep('sending');
-      const { cooldownUntil: until } = await resendOtp(email.trim().toLowerCase());
-      setCooldownUntil(until);
-      setOtp('');
-      setStep('otp_sent');
-      setSuccess('New code sent!');
-    } catch (err) {
-      setError(err.message || 'Could not resend. Please wait.');
-      setStep('otp_sent');
-    }
-  }, [email, resendOtp]);
-
-  const handleBackToEmail = () => {
-    setStep('idle');
-    setOtp('');
-    setError('');
-    setSuccess('');
-    setTimeout(() => emailInputRef.current?.focus(), 100);
+  const handleBack = () => {
+    setStep('form'); setOtp(''); setError(''); setSuccess('');
   };
 
+  // ── OTP step ────────────────────────────────────────────────────
+  if (step === 'otp' || step === 'verifying') {
+    return (
+      <motion.div key="otp-step"
+        initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -24 }}>
+
+        <AnimatePresence mode="wait">
+          {error   && <Alert key="e" type="error"   msg={error} />}
+          {success && <Alert key="s" type="success" msg={success} />}
+        </AnimatePresence>
+
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 2 }}
+            style={{ fontSize: 36, marginBottom: 10 }}>📬</motion.div>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
+            Enter the <strong style={{ color: '#a78bfa' }}>6-digit code</strong> sent to<br/>
+            <span style={{ fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>
+              {email}
+            </span>
+          </p>
+        </div>
+
+        <OtpInput value={otp} onChange={setOtp} disabled={busy} />
+
+        <SubmitBtn onClick={handleVerify} loading={busy}
+          disabled={otp.length < 6 || busy}>
+          Verify & Create Account ✓
+        </SubmitBtn>
+
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <button onClick={handleBack} disabled={busy}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+                     color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
+            ← Change details
+          </button>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ── Form step ───────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative" style={{ background: '#05050A' }}>
+    <motion.div key="form-step"
+      initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 24 }}>
+      <form onSubmit={handleSignUp} autoComplete="off">
+        <AnimatePresence mode="wait">
+          {error && <Alert key="err" type="error" msg={error} />}
+        </AnimatePresence>
+
+        <Field label="Email" type="email" value={email} onChange={setEmail}
+               placeholder="you@example.com" autoFocus id="signup-email"
+               disabled={busy} />
+
+        <Field label="Username" value={username} onChange={setUname}
+               placeholder="e.g. john_doe" id="signup-username" disabled={busy}
+               helpText="Min 3 chars · no spaces" />
+
+        <Field label="Password" type={showPass ? 'text' : 'password'}
+               value={password} onChange={setPass}
+               placeholder="Min 8 characters" id="signup-password" disabled={busy}
+               helpText="At least 8 characters"
+               rightSlot={
+                 <button type="button" onClick={() => setShow(v => !v)}
+                   style={{ background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'rgba(255,255,255,0.35)', fontSize: 16 }}>
+                   {showPass ? '🙈' : '👁'}
+                 </button>
+               } />
+
+        <Field label="Confirm Password" type={showPass ? 'text' : 'password'}
+               value={confirmPw} onChange={setConf}
+               placeholder="Repeat your password" id="signup-confirm" disabled={busy} />
+
+        <div style={{ height: 8 }} />
+        <SubmitBtn loading={busy || step === 'sending'}>
+          {step === 'sending' ? 'Sending code…' : 'Create Account →'}
+        </SubmitBtn>
+      </form>
+    </motion.div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  MAIN AuthScreen
+// ══════════════════════════════════════════════════════════════════════════════
+const AuthScreen = () => {
+  const [tab, setTab] = useState('login');
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 relative"
+         style={{ background: '#05050A' }}>
       <CyberBg />
       <div className="fixed inset-0 bg-cyber-grid pointer-events-none z-0" />
 
-      <AnimatePresence mode="wait">
-        {/* ── STEP 1: EMAIL ─────────────────────────────────── */}
-        {step !== 'otp_sent' && step !== 'verifying' ? (
+      <motion.div
+        key="auth-card"
+        initial={{ opacity: 0, y: 30, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -20, scale: 0.96 }}
+        transition={{ type: 'spring', damping: 24 }}
+        className="glass-card p-9 w-full max-w-[440px] relative z-10"
+      >
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <motion.div
-            key="step-email"
-            initial={{ opacity: 0, y: 30, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.96 }}
-            transition={{ type: 'spring', damping: 24 }}
-            className="glass-card p-9 w-full max-w-[420px] relative z-10"
-          >
-            {/* Header */}
-            <div className="text-center mb-8">
-              <motion.div
-                animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 56, height: 56, borderRadius: 18,
-                  background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15))',
-                  border: '1px solid rgba(99,102,241,0.3)',
-                  fontSize: 26, marginBottom: 20,
-                  boxShadow: '0 0 30px rgba(99,102,241,0.15)',
-                }}
-              >⚡</motion.div>
-              <h2 className="hero-heading-gradient"
-                style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.2, marginBottom: 6 }}>
-                SMARTCHAT X
-              </h2>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', letterSpacing: '-0.01em' }}>
-                Enter your email to receive a sign-in code
-              </p>
-            </div>
+            animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 56, height: 56, borderRadius: 18,
+              background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.15))',
+              border: '1px solid rgba(99,102,241,0.3)', fontSize: 26, marginBottom: 16,
+              boxShadow: '0 0 30px rgba(99,102,241,0.15)',
+            }}
+          >⚡</motion.div>
 
-            {/* Alerts */}
-            <AnimatePresence>
-              {error   && <Alert type="error"   msg={error} />}
-              {success && <Alert type="success" msg={success} />}
-            </AnimatePresence>
+          <h1 style={{ fontFamily: 'var(--font-sans)', fontWeight: 800, fontSize: 26,
+                       color: '#fff', letterSpacing: '-0.02em', marginBottom: 6 }}>
+            SMART<span style={{ background: 'linear-gradient(90deg,#818cf8,#a78bfa)',
+                                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              CHAT X
+            </span>
+          </h1>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-mono)' }}>
+            {tab === 'login' ? 'Welcome back. Sign in to continue.' : 'Create your account — it only takes a minute.'}
+          </p>
+        </div>
 
-            {/* Form */}
-            <form onSubmit={handleSendOtp} className="space-y-4">
-              <div>
-                <label style={{
-                  display: 'block', fontSize: 10, fontWeight: 600,
-                  color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em',
-                  textTransform: 'uppercase', marginBottom: 8,
-                }}>Email Address</label>
-                <input
-                  ref={emailInputRef}
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="neon-input"
-                  required
-                  autoComplete="email"
-                  disabled={isSending}
-                  style={{ opacity: isSending ? 0.6 : 1 }}
-                />
-              </div>
+        {/* Tab bar */}
+        <Tabs active={tab} onChange={t => setTab(t)} />
 
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
-                type="submit"
-                disabled={isSending || !email.trim()}
-                className="btn-pill-white w-full font-semibold"
-                style={{
-                  justifyContent: 'center', borderRadius: 12,
-                  padding: '13px 24px', marginTop: 4,
-                  opacity: (isSending || !email.trim()) ? 0.55 : 1,
-                  position: 'relative', overflow: 'hidden',
-                }}
-              >
-                {isSending ? (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-                    <motion.span
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      style={{ display: 'inline-block' }}
-                    >⏳</motion.span>
-                    Sending code…
-                  </span>
-                ) : (
-                  '📨  Send Sign-In Code'
-                )}
-              </motion.button>
-            </form>
+        {/* Panels */}
+        <AnimatePresence mode="wait">
+          {tab === 'login'
+            ? <motion.div key="login-panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <LoginPanel />
+              </motion.div>
+            : <motion.div key="signup-panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <SignupPanel />
+              </motion.div>
+          }
+        </AnimatePresence>
 
-            {/* OTP info note */}
-            <p style={{
-              textAlign: 'center', marginTop: 24,
-              fontSize: 11, fontFamily: 'var(--font-mono)',
-              color: 'rgba(255,255,255,0.18)', lineHeight: 1.6,
-            }}>
-              We'll send a 6-digit code to your email.<br />
-              No password required. Secured by Supabase.
-            </p>
-          </motion.div>
-        ) : (
-        /* ── STEP 2: OTP ────────────────────────────────────── */
-          <motion.div
-            key="step-otp"
-            initial={{ opacity: 0, y: 30, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.96 }}
-            transition={{ type: 'spring', damping: 24 }}
-            className="glass-card p-9 w-full max-w-[420px] relative z-10"
-          >
-            {/* Header */}
-            <div className="text-center mb-6">
-              <motion.div
-                animate={{ y: [0, -8, 0] }}
-                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ fontSize: 44, marginBottom: 16 }}
-              >📬</motion.div>
-              <h2 className="hero-heading-gradient"
-                style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 8 }}>
-                Check Your Email
-              </h2>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5 }}>
-                We sent a 6-digit code to
-              </p>
-              <p style={{
-                fontSize: 14, fontWeight: 600, color: '#fff',
-                fontFamily: 'var(--font-mono)', marginTop: 4,
-                padding: '6px 14px', borderRadius: 8,
-                background: 'rgba(99,102,241,0.1)',
-                border: '1px solid rgba(99,102,241,0.2)',
-                display: 'inline-block',
-              }}>
-                {email}
-              </p>
-            </div>
-
-            {/* Alerts */}
-            <AnimatePresence>
-              {error   && <Alert type="error"   msg={error} />}
-              {success && <Alert type="success" msg={success} />}
-            </AnimatePresence>
-
-            {/* OTP Input */}
-            <div>
-              <label style={{
-                display: 'block', fontSize: 10, fontWeight: 600,
-                color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em',
-                textTransform: 'uppercase', textAlign: 'center', marginBottom: 0,
-              }}>Enter 6-digit code</label>
-              <OtpInput
-                value={otp}
-                onChange={setOtp}
-                disabled={isVerifying}
-              />
-            </div>
-
-            {/* Verify button */}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={handleVerify}
-              disabled={otp.length !== 6 || isVerifying}
-              className="btn-pill-white w-full font-semibold"
-              style={{
-                justifyContent: 'center', borderRadius: 12,
-                padding: '13px 24px',
-                opacity: (otp.length !== 6 || isVerifying) ? 0.5 : 1,
-              }}
-            >
-              {isVerifying ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-                  <motion.span
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                    style={{ display: 'inline-block' }}
-                  >⏳</motion.span>
-                  Verifying…
-                </span>
-              ) : (
-                '✓  Verify & Sign In'
-              )}
-            </motion.button>
-
-            {/* Resend timer */}
-            <ResendTimer
-              cooldownUntil={cooldownUntil}
-              onResend={handleResend}
-              loading={step === 'sending'}
-            />
-
-            {/* Back link */}
-            <div style={{ textAlign: 'center', marginTop: 20 }}>
-              <button
-                onClick={handleBackToEmail}
-                style={{
-                  fontSize: 12, color: 'rgba(255,255,255,0.25)',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  transition: 'color 0.2s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
-                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.25)'}
-              >
-                ← Change Email
-              </button>
-            </div>
-
-            <p style={{
-              textAlign: 'center', marginTop: 18,
-              fontSize: 10, fontFamily: 'var(--font-mono)',
-              color: 'rgba(255,255,255,0.12)',
-            }}>
-              Code expires in 10 minutes · Secured by Supabase
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        {/* Footer */}
+        <p style={{ textAlign: 'center', marginTop: 24, fontSize: 11,
+                    color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-mono)' }}>
+          🔒 End-to-end encrypted · Powered by Supabase
+        </p>
+      </motion.div>
     </div>
   );
 };
