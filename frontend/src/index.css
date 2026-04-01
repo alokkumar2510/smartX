@@ -107,14 +107,16 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   body {
     font-family: var(--font-ui);
     background: var(--bg-base);
     color: var(--text-1);
-    min-height: 100dvh;
-    overflow-x: hidden;
+    height: 100dvh;
+    overflow: hidden;
     font-size: 14px;
     line-height: 1.5;
     letter-spacing: -0.01em;

@@ -521,7 +521,7 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
       </AnimatePresence>
 
       {/* ── Input Bar ── */}
-      <div className="px-4 py-3 border-t flex items-center gap-2 shrink-0"
+      <div className="px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t flex items-center gap-2 shrink-0"
            style={{ borderColor: 'var(--border)', background: 'var(--bg-raised)' }}>
         {isBlocked ? (
           <p className="flex-1 text-center text-xs py-1" style={{ color: 'var(--text-3)' }}>
@@ -600,8 +600,8 @@ const InlineDMPanel = ({ targetUser, currentUser, connections, blocks, ws, onClo
         <div className="flex items-center gap-3">
           {/* Mobile back */}
           <motion.button whileTap={{ scale: 0.9 }} onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-sm lg:hidden"
-            style={{ background: 'var(--bg-hover)', color: 'var(--text-2)' }}>←</motion.button>
+            className="w-10 h-10 -ml-2 rounded-xl flex items-center justify-center text-lg lg:hidden"
+            style={{ background: 'transparent', color: 'var(--text-1)' }}>←</motion.button>
 
           {/* Avatar + online dot */}
           <div className="relative flex-shrink-0">
@@ -672,11 +672,11 @@ const InlineDMPanel = ({ targetUser, currentUser, connections, blocks, ws, onClo
           {/* Close (desktop) */}
           <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.9 }}
             onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-sm hidden lg:flex"
+            className="w-8 h-8 rounded-xl hidden lg:flex items-center justify-center text-sm"
             style={{ background: 'var(--bg-hover)', color: 'var(--text-3)' }}
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-1)'; }}
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; }}
-            title="Back to contacts">✕</motion.button>
+            title="Close chat">✕</motion.button>
         </div>
       </div>
 
@@ -707,6 +707,7 @@ const ChatDashboard = () => {
   const blocksRef = useRef([]);
 
   const [showSidebar, setShowSidebar]       = useState(true);
+  const [activeMobileTab, setActiveMobileTab] = useState('chats');
   const [showAnalytics, setShowAnalytics]   = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [reconnectIn, setReconnectIn]       = useState(0);
@@ -1073,55 +1074,80 @@ const ChatDashboard = () => {
     </div>
   );
 
+  const renderMobileBottomNav = () => (
+    <div className="lg:hidden flex border-t shrink-0 z-40 bg-base"
+         style={{ borderColor: 'var(--border)', paddingBottom: 'env(safe-area-inset-bottom)', background: 'var(--bg-raised)', backdropFilter: 'blur(20px)' }}>
+      <button onClick={() => { setActiveMobileTab('chats'); setDmTarget(null); }}
+              className={`flex-1 py-3 text-2xl flex justify-center items-center flex-col gap-1 transition-opacity ${activeMobileTab === 'chats' ? 'opacity-100' : 'opacity-40'}`}>
+        💬 <span className="text-[9px] font-bold text-white tracking-widest">CHATS</span>
+      </button>
+      <button onClick={() => { setActiveMobileTab('ai'); setShowAIChat(true); }}
+              className={`flex-1 py-3 text-2xl flex justify-center items-center flex-col gap-1 transition-opacity ${activeMobileTab === 'ai' || showAIChat ? 'opacity-100' : 'opacity-40'}`}>
+        🤖 <span className="text-[9px] font-bold text-white tracking-widest">AI</span>
+      </button>
+      <button onClick={() => { setActiveMobileTab('calls'); setShowCallHistory(true); }}
+              className={`flex-1 py-3 text-2xl flex justify-center items-center flex-col gap-1 transition-opacity ${activeMobileTab === 'calls' || showCallHistory ? 'opacity-100' : 'opacity-40'}`}>
+        📞 <span className="text-[9px] font-bold text-white tracking-widest">CALLS</span>
+      </button>
+      <button onClick={() => { setActiveMobileTab('profile'); setShowProfile(true); }}
+              className={`flex-1 py-3 text-2xl flex justify-center items-center flex-col gap-1 transition-opacity ${activeMobileTab === 'profile' || showProfile ? 'opacity-100' : 'opacity-40'}`}>
+        👤 <span className="text-[9px] font-bold text-white tracking-widest">PROFILE</span>
+      </button>
+    </div>
+  );
+
   return (
-    <div className="h-screen flex relative overflow-hidden" style={{ background: 'var(--bg-base)' }}>
+    <div className="h-[100dvh] flex flex-col lg:flex-row relative overflow-hidden" style={{ background: 'var(--bg-base)' }}>
       {!isLowNetwork && <CyberBg />}
       <div className="fixed inset-0 bg-cyber-grid pointer-events-none z-0" />
 
       {/* ── Sidebar ─────────────────────────────────────── */}
-      <Sidebar
-        users={allUsers}
-        connections={connections}
-        blocks={blocks}
-        onlineIds={onlineUsers}
-        currentUser={user}
-        show={showSidebar}
-        onClose={() => setShowSidebar(false)}
-        onDMClick={handleDMClick}
-        onCall={initiateCall}
-        isDND={isDND}
-        onThemeChange={handleThemeChange}
-        activeDmId={dmTarget?.id}
-        unreadCounts={unreadMap}
-        onClearUnread={clearUnread}
-        lastMessageOverrides={lastMsgOverrides}  // live WS-driven updates
-      />
+      <div className={`lg:flex lg:w-80 lg:shrink-0 lg:border-r z-20 transition-all ${dmTarget ? 'hidden' : 'flex flex-1 w-full min-h-0'}`} style={{ borderColor: 'var(--border)' }}>
+        <Sidebar
+          users={allUsers}
+          connections={connections}
+          blocks={blocks}
+          onlineIds={onlineUsers}
+          currentUser={user}
+          show={showSidebar}
+          onClose={() => setShowSidebar(false)}
+          onDMClick={handleDMClick}
+          onCall={initiateCall}
+          isDND={isDND}
+          onThemeChange={handleThemeChange}
+          activeDmId={dmTarget?.id}
+          unreadCounts={unreadMap}
+          onClearUnread={clearUnread}
+          lastMessageOverrides={lastMsgOverrides}  // live WS-driven updates
+        />
+      </div>
 
       {/* ── Main panel ──────────────────────────────────── */}
-      <div className="flex-1 flex flex-col relative z-10 min-w-0">
+      <div className={`flex-1 flex flex-col relative z-10 min-w-0 ${dmTarget ? 'flex' : 'hidden lg:flex'}`}>
         <NetworkBanner connectionStatus={connectionStatus} reconnectIn={reconnectIn} onRetry={retryConnection} />
 
-        {/* Header */}
-        <header className="border-b px-4 py-3 flex items-center justify-between shrink-0"
-          style={{ background: 'var(--bg-raised)', borderColor: 'var(--border)', backdropFilter: 'blur(20px)' }}>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowSidebar(s => !s)}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-sm transition-all"
-              style={{ background: 'var(--bg-hover)', color: 'var(--text-3)' }}
-              onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; }}
-              title="Toggle sidebar">☰</button>
-            <div className="w-7 h-7 rounded-xl flex items-center justify-center text-sm"
-                 style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>⚡</div>
-            <div>
-              <h1 className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-1)' }}>
-                SmartChat <span className="text-gradient">X</span>
-              </h1>
-              <p className="text-[9px] font-mono uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>
-                {connectedContacts.length} Contact{connectedContacts.length !== 1 ? 's' : ''} · {onlineCount} Online
-              </p>
+        {/* Header (desktop mainly OR home panel header) */}
+        {!dmTarget && (
+          <header className="border-b px-4 py-3 flex items-center justify-between shrink-0"
+            style={{ background: 'var(--bg-raised)', borderColor: 'var(--border)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowSidebar(s => !s)}
+                className="w-8 h-8 rounded-xl hidden lg:flex items-center justify-center text-sm transition-all"
+                style={{ background: 'var(--bg-hover)', color: 'var(--text-3)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)' }}
+                title="Toggle sidebar">☰</button>
+              <div className="w-7 h-7 rounded-xl flex items-center justify-center text-sm"
+                   style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>⚡</div>
+              <div>
+                <h1 className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-1)' }}>
+                  SmartChat <span className="text-gradient">X</span>
+                </h1>
+                <p className="text-[9px] font-mono uppercase tracking-widest hidden sm:block" style={{ color: 'var(--text-3)' }}>
+                  {connectedContacts.length} Contact{connectedContacts.length !== 1 ? 's' : ''} · {onlineCount} Online
+                </p>
+              </div>
             </div>
-          </div>
 
           <div className="flex items-center gap-2">
             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
@@ -1172,6 +1198,7 @@ const ChatDashboard = () => {
             </div>
           </div>
         </header>
+        )}
 
         {/* Content */}
         <div className="flex-1 flex min-h-0 relative">
@@ -1196,13 +1223,16 @@ const ChatDashboard = () => {
               <motion.div key="home"
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="flex-1 flex min-h-0">
+                className="flex-1 flex min-h-0 hidden lg:flex">
                 <HomePanel />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      {!dmTarget && renderMobileBottomNav()}
 
       {/* ── Overlays ────────────────────────────────────── */}
       <AnalyticsPanel show={showAnalytics} messages={[]} networkStats={networkStats}
