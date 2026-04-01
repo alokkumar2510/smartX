@@ -63,11 +63,6 @@ app = FastAPI(
 async def root():
     return {"message": "SmartChat X Backend is Live", "version": "3.0"}
 
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint for frontend connectivity probing."""
-    return {"status": "ok", "version": "3.0", "timestamp": datetime.utcnow().isoformat()}
-
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -103,7 +98,7 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 @app.on_event("startup")
 async def startup():
     init_db()
-    # Create DMs table if not exists
+    # Create / migrate DMs table
     try:
         db = get_db()
         is_pg = hasattr(db, 'conn') and 'psycopg2' in str(type(db.conn))
@@ -115,6 +110,13 @@ async def startup():
             target_user_id INTEGER NOT NULL,
             content TEXT,
             image_url TEXT,
+            content_type TEXT DEFAULT 'text',
+            voice_url TEXT,
+            voice_duration REAL DEFAULT 0,
+            file_url TEXT,
+            file_name TEXT,
+            file_size INTEGER DEFAULT 0,
+            reply_to TEXT,
             protocol TEXT DEFAULT 'TCP',
             status TEXT DEFAULT 'sent',
             delivered INTEGER DEFAULT 0,
@@ -122,9 +124,25 @@ async def startup():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""")
         db.commit()
+        # Add missing columns to existing tables (safe ALTER TABLE)
+        extra_cols = [
+            ("content_type", "TEXT DEFAULT 'text'"),
+            ("voice_url",    "TEXT"),
+            ("voice_duration", "REAL DEFAULT 0"),
+            ("file_url",     "TEXT"),
+            ("file_name",    "TEXT"),
+            ("file_size",    "INTEGER DEFAULT 0"),
+            ("reply_to",     "TEXT"),
+        ]
+        for col, col_def in extra_cols:
+            try:
+                db.execute(f"ALTER TABLE direct_messages ADD COLUMN {col} {col_def}")
+                db.commit()
+            except Exception:
+                pass  # Column already exists
         db.close()
     except Exception as e:
-        logger.warning(f"DM table creation: {e}")
+        logger.warning(f"DM table creation/migration: {e}")
     logger.info("═" * 55)
     logger.info("  ⚡ SmartChat X Backend v4.0 — ONLINE")
     logger.info("  REST API:  http://127.0.0.1:8000")
@@ -469,9 +487,10 @@ async def ai_route_protocol(msg: dict):
 
 @app.get("/api/health")
 async def health_check():
+    """Primary health probe — used by frontend WebSocket reconnect logic."""
     return {
-        "status": "healthy",
-        "service": "SmartChat X Backend v3.0",
+        "status": "ok",
+        "version": "4.0",
         "online_users": manager.online_count,
         "ai_engine": "active",
         "webrtc_signaling": "active",
@@ -662,22 +681,38 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                             f"{content[:50]}{'...' if len(content)>50 else ''}")
 
             # ═══════════════════════════════════════════
-            #  HANDLE: typing — Via UDP (fast, fire-and-forget)
+            #  HANDLE: typing — routed to DM partner only
             # ═══════════════════════════════════════════
             elif event_type == "typing":
-                await manager.broadcast(json.dumps({
+                target_id = msg.get("target_user_id")
+                payload_typing = json.dumps({
                     "type": "user_typing",
                     "user_id": user_id,
                     "username": username,
-                    "room": msg.get("room", "global"),
-                }), exclude_id=user_id)
+                })
+                if target_id:
+                    # DM context — send only to conversation partner
+                    await manager.send_to(target_id, payload_typing)
+                else:
+                    # Legacy global context fallback
+                    await manager.broadcast(json.dumps({
+                        "type": "user_typing",
+                        "user_id": user_id,
+                        "username": username,
+                        "room": msg.get("room", "global"),
+                    }), exclude_id=user_id)
 
             elif event_type == "stop_typing":
-                await manager.broadcast(json.dumps({
+                target_id = msg.get("target_user_id")
+                payload_stop = json.dumps({
                     "type": "user_stop_typing",
                     "user_id": user_id,
                     "username": username,
-                }), exclude_id=user_id)
+                })
+                if target_id:
+                    await manager.send_to(target_id, payload_stop)
+                else:
+                    await manager.broadcast(payload_stop, exclude_id=user_id)
 
             # ═══════════════════════════════════════════
             #  HANDLE: read_receipt — persisted to DB
@@ -750,18 +785,39 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
             #  HANDLE: private_message — DM (only sender + target see it)
             # ═══════════════════════════════════════════
             elif event_type == "private_message":
-                target_id = msg.get("target_user_id")
-                content = msg.get("content", "")
-                image_url = msg.get("image_url")
-                if target_id and (content or image_url):
+                target_id   = msg.get("target_user_id")
+                content     = msg.get("content", "")
+                image_url   = msg.get("image_url")
+                content_type = msg.get("content_type", "text")
+                voice_url   = msg.get("voice_url")
+                voice_dur   = msg.get("voice_duration", 0)
+                file_url    = msg.get("file_url")
+                file_name   = msg.get("file_name")
+                file_size   = msg.get("file_size", 0)
+                reply_to    = msg.get("reply_to")
+
+                has_content = content or image_url or voice_url or file_url
+                if target_id and has_content:
                     dm_id = 0
                     db = None
                     try:
                         db = get_db()
                         cursor = db.execute(
-                            """INSERT INTO direct_messages (sender_id, sender_username, target_user_id, content, image_url, status)
-                               VALUES (?, ?, ?, ?, ?, 'sent') RETURNING id""",
-                            (user_id, username, target_id, content, image_url)
+                            """INSERT INTO direct_messages
+                               (sender_id, sender_username, target_user_id,
+                                content, image_url, content_type,
+                                voice_url, voice_duration,
+                                file_url, file_name, file_size,
+                                reply_to, status)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent')
+                               RETURNING id""",
+                            (
+                                user_id, username, target_id,
+                                content, image_url, content_type,
+                                voice_url, voice_dur,
+                                file_url, file_name, file_size,
+                                json.dumps(reply_to) if reply_to else None,
+                            )
                         )
                         dm_id = cursor.fetchone()[0]
                         db.commit()
@@ -781,20 +837,30 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "target_user_id": target_id,
                         "content": content,
                         "image_url": image_url,
+                        "content_type": content_type,
+                        "voice_url": voice_url,
+                        "voice_duration": voice_dur,
+                        "file_url": file_url,
+                        "file_name": file_name,
+                        "file_size": file_size,
+                        "reply_to": reply_to,
                         "status": "sent",
                         "created_at": datetime.utcnow().isoformat(),
                     }
-                    # Send to target — mark delivered if they're online
+                    # Deliver to target — promote to 'delivered' if online
                     sent_ok = await manager.send_to(target_id, json.dumps(dm_data))
                     if sent_ok:
                         dm_data["status"] = "delivered"
                         try:
                             db2 = get_db()
-                            db2.execute("UPDATE direct_messages SET status = 'delivered', delivered = 1 WHERE id = ?", (dm_id,))
+                            db2.execute(
+                                "UPDATE direct_messages SET status='delivered', delivered=1 WHERE id=?",
+                                (dm_id,)
+                            )
                             db2.commit(); db2.close()
                         except: pass
                     await websocket.send_text(json.dumps({**dm_data, "type": "dm_sent"}))
-                    logger.info(f"💌 DM: {username} → user#{target_id} [status={dm_data['status']}]")
+                    logger.info(f"💌 DM [{content_type}]: {username} → user#{target_id} [status={dm_data['status']}]")
 
             # ═══════════════════════════════════════════
             #  HANDLE: get_dm_history

@@ -1,0 +1,27 @@
+{
+  "name": "smartchatx-mediasoup-server",
+  "version": "1.0.0",
+  "description": "SmartChat X — Mediasoup SFU Signaling Server",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --forceExit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mediasoup": "^3.14.14",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0",
+    "jest": "^29.7.0",
+    "socket.io-client": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
