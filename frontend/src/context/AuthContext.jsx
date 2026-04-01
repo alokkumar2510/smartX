@@ -1,15 +1,19 @@
-import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
+
+// Edge Function URLs (same project as the frontend Supabase instance)
+const FN_BASE = 'https://taoxhelakyimveurqvbn.functions.supabase.co';
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [token, setToken]     = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const otpCooldownRef        = useRef(0);
 
-  // ── Profile sync — upsert into our `users` table ──────────────────
+  // ── Profile sync — upsert into `users` table ──────────────────────
   const syncProfile = useCallback(async (supabaseUser) => {
     if (!supabaseUser) return null;
     try {
@@ -20,26 +24,32 @@ export function AuthProvider({ children }) {
       const avatar   = meta.avatar || '👤';
 
       const { data: existing } = await supabase
-        .from('users')
-        .select('id, username, avatar, supabase_id')
-        .eq('username', username)
-        .maybeSingle();
+        .from('users').select('id, username, avatar, supabase_id')
+        .eq('supabase_id', supabaseUser.id).maybeSingle();
 
       if (existing) {
-        // Backfill supabase_id if it's missing
-        if (!existing.supabase_id) {
-          await supabase.from('users').update({ supabase_id: supabaseUser.id }).eq('id', existing.id);
-        }
         return { id: existing.id, username: existing.username,
                  avatar: existing.avatar, email: supabaseUser.email,
                  supabase_id: supabaseUser.id };
       }
 
+      const { data: byUsername } = await supabase
+        .from('users').select('id, username, avatar, supabase_id')
+        .eq('username', username).maybeSingle();
+
+      if (byUsername) {
+        if (!byUsername.supabase_id) {
+          await supabase.from('users').update({ supabase_id: supabaseUser.id }).eq('id', byUsername.id);
+        }
+        return { id: byUsername.id, username: byUsername.username,
+                 avatar: byUsername.avatar, email: supabaseUser.email,
+                 supabase_id: supabaseUser.id };
+      }
+
       const { data: created } = await supabase
         .from('users')
-        .insert({ username, password_hash: 'supabase_auth', avatar, supabase_id: supabaseUser.id })
-        .select('id, username, avatar')
-        .single();
+        .insert({ username, password_hash: 'supabase_otp', avatar, supabase_id: supabaseUser.id })
+        .select('id, username, avatar').single();
 
       if (created) {
         return { id: created.id, username: created.username,
@@ -47,131 +57,133 @@ export function AuthProvider({ children }) {
                  supabase_id: supabaseUser.id };
       }
     } catch (e) {
-      console.warn('[AuthContext] Profile sync:', e.message);
+      console.warn('[AuthContext] syncProfile:', e.message);
     }
-    // Fallback — use Supabase auth data directly
     return {
       id:          supabaseUser.id,
-      username:    supabaseUser.user_metadata?.username
-                 || supabaseUser.email?.split('@')[0]
-                 || 'user',
+      username:    supabaseUser.user_metadata?.username || supabaseUser.email?.split('@')[0] || 'user',
       avatar:      supabaseUser.user_metadata?.avatar || '👤',
       email:       supabaseUser.email,
       supabase_id: supabaseUser.id,
     };
   }, []);
 
-  // ── Session bootstrap on mount ─────────────────────────────────────
+  // ── Session bootstrap ──────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      if (s) {
-        setSession(s);
-        setToken(s.access_token);
-        setUser(await syncProfile(s.user));
+      try {
+        const { data: { session: s } } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000)),
+        ]);
+        if (s) {
+          setSession(s); setToken(s.access_token);
+          setUser(await syncProfile(s.user));
+        }
+      } catch (e) {
+        console.warn('[Auth] Session bootstrap:', e.message);
       }
       setLoading(false);
     };
     init();
 
-    // Real-time auth state listener — handles token refresh, login, logout
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       if (s) {
-        setSession(s);
-        setToken(s.access_token);
-        // Refresh profile on relevant events
+        setSession(s); setToken(s.access_token);
         if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
           setUser(await syncProfile(s.user));
         }
       } else {
-        setSession(null);
-        setToken(null);
-        setUser(null);
+        setSession(null); setToken(null); setUser(null);
       }
     });
-
     return () => subscription.unsubscribe();
   }, [syncProfile]);
 
-  // ── Auth actions ───────────────────────────────────────────────────
+  // ── OTP Actions ────────────────────────────────────────────────────
 
-  /** Sign up with email + password. Sets user metadata for username/avatar. */
-  const signUp = async (email, password, username, avatar = '👤') => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { username, avatar, display_name: username },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+  /**
+   * Step 1: Ask Edge Function to send a 6-digit OTP via Brevo to the email.
+   * Returns { cooldownUntil: number }
+   */
+  const sendOtp = async (email) => {
+    const res = await fetch(`${FN_BASE}/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
     });
-    if (error) throw error;
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(data.error || 'Failed to send code');
+      if (res.status === 429) err.cooldownRemaining = data.cooldownRemaining;
+      throw err;
+    }
+    const cooldownUntil = data.cooldownUntil || (Date.now() + 60_000);
+    otpCooldownRef.current = cooldownUntil;
+    return { cooldownUntil };
+  };
+
+  /**
+   * Step 2: Send the 6-digit code to the Edge Function for verification.
+   * On success, the function returns a token we use to sign in via Supabase.
+   */
+  const verifyOtp = async (email, code) => {
+    const res = await fetch(`${FN_BASE}/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code: String(code).trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Invalid code. Please try again.');
+
+    // Use the action_link (magic link) to exchange for a Supabase session
+    // The backend generates a magic link token — we use verifyOtp with the hash
+    if (data.action_link) {
+      const url       = new URL(data.action_link);
+      const tokenHash = url.searchParams.get('token_hash') ||
+                        new URLSearchParams(url.hash.slice(1)).get('access_token');
+
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'magiclink',
+        });
+        if (error) throw new Error(error.message);
+      }
+    }
     return data;
   };
 
-  /** Sign in with email + password. */
-  const login = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    return data;
+  /** Resend — enforces 60-second cooldown client-side as well as server-side */
+  const resendOtp = async (email) => {
+    const remaining = otpCooldownRef.current - Date.now();
+    if (remaining > 0) {
+      throw new Error(`Please wait ${Math.ceil(remaining / 1000)}s before requesting another code.`);
+    }
+    return sendOtp(email);
   };
 
-  /** Backward-compat shim for legacy custom-JWT login (keeps existing code working). */
-  const legacyLogin = (userData, authToken) => {
-    setUser(userData);
-    setToken(authToken);
-    sessionStorage.setItem('smartchat_auth', JSON.stringify({ user: userData, token: authToken }));
-  };
-
-  /** Sign out — clears Supabase session and all local storage. */
   const logout = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setToken(null);
-    setSession(null);
-    sessionStorage.removeItem('smartchat_auth');
+    setUser(null); setToken(null); setSession(null);
   };
 
-  /**
-   * Trigger a password reset email.
-   * The link lands on /auth/reset-password with `type=recovery` in the URL hash.
-   */
-  const resetPassword = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-    if (error) throw error;
-  };
-
-  /** Update password — called after the user clicks the recovery link. */
-  const updatePassword = async (newPassword) => {
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) throw error;
-  };
-
-  /** Resend the signup verification email. */
-  const resendVerification = async (email) => {
-    const { error } = await supabase.auth.resend({ type: 'signup', email });
-    if (error) throw error;
-  };
-
-  /**
-   * Get a fresh access token for backend API calls.
-   * Falls back to the stored token if refresh hasn't materialised yet.
-   */
   const getToken = async () => {
     const { data: { session: s } } = await supabase.auth.getSession();
     return s?.access_token ?? token;
   };
 
+  const legacyLogin = (userData, authToken) => {
+    setUser(userData); setToken(authToken);
+  };
+
   return (
     <AuthContext.Provider value={{
       user, token, session, loading,
-      login, legacyLogin, signUp, logout,
-      resetPassword, updatePassword, resendVerification,
-      getToken,
-      isLoggedIn:       !!token,
-      isEmailVerified:  session?.user?.email_confirmed_at != null,
+      sendOtp, verifyOtp, resendOtp,
+      legacyLogin, logout, getToken,
+      isLoggedIn:      !!token,
+      isEmailVerified: !!token,
     }}>
       {children}
     </AuthContext.Provider>
