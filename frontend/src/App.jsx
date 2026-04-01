@@ -1193,8 +1193,9 @@ const ChatDashboard = () => {
               </motion.button>
               <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                 onClick={logout}
-                className="text-white/15 hover:text-neon-pink text-xs transition-colors ml-1"
-                title="Logout">⏻</motion.button>
+                className="text-white/40 hover:text-neon-pink text-sm transition-colors ml-1 p-2 rounded-lg hover:bg-white/5"
+                title="Logout"
+                id="logout-btn">⏻</motion.button>
             </div>
           </div>
         </header>
