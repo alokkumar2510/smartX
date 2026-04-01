@@ -234,8 +234,10 @@ const Sidebar = ({
 
   const onlineCount = onlineIds.filter(o => acceptedIds.includes(o.user_id)).length;
 
-  const respondToRequest = (id, status) =>
-    supabase.from('connections').update({ status }).eq('id', id);
+  const respondToRequest = async (id, status) => {
+    const { error } = await supabase.from('connections').update({ status }).eq('id', id);
+    if (error) console.error('Failed to respond to request:', error);
+  };
 
   return (
     <>

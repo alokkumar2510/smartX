@@ -1302,7 +1302,8 @@ export default function App() {
 }
 
 function AppContent() {
-  const { isLoggedIn, loading } = useAuth();
+  // isLoggedIn = !!token && isEmailVerified (both required)
+  const { isLoggedIn, isEmailVerified, token, loading } = useAuth();
 
   if (loading) {
     return (
@@ -1319,9 +1320,12 @@ function AppContent() {
     );
   }
 
+  // Gate: must have a session token AND be email-verified to reach the dashboard
+  const canAccessApp = isLoggedIn && isEmailVerified;
+
   return (
     <AnimatePresence mode="wait">
-      {isLoggedIn ? (
+      {canAccessApp ? (
         <motion.div key="chat" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
           <ChatDashboard />
         </motion.div>

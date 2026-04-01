@@ -1,15 +1,18 @@
 /**
  * SmartChatX — Auth Screen
  *
- * LOGIN  tab: email + password  → instant access
+ * LOGIN  tab: email + password → instant access (no OTP)
  * SIGNUP tab: email + username + password → 6-digit OTP verification
+ * OTP screen: also shown post-login if user is not yet verified
+ *
+ * No magic links. No OTP during login.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import CyberBg from './CyberBg';
 
-// ── Kept for backward-compat imports in App.jsx ──────────────────────────────
+// ── Backward-compat stubs ─────────────────────────────────────────────────────
 export function ResetPasswordPage({ onDone }) {
   useEffect(() => { onDone?.(); }, [onDone]);
   return null;
@@ -98,10 +101,19 @@ function OtpInput({ value, onChange, disabled }) {
 
   const handlePaste = (e) => {
     e.preventDefault();
-    const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    onChange(digits.padEnd(6, '').slice(0, 6));
-    if (digits.length > 0) setTimeout(() => refs.current[Math.min(digits.length, 5)]?.focus(), 0);
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    onChange(pasted.padEnd(6, '').slice(0, 6));
+    if (pasted.length > 0) setTimeout(() => refs.current[Math.min(pasted.length, 5)]?.focus(), 0);
   };
+
+  // Focus first empty slot on mount
+  useEffect(() => {
+    setTimeout(() => {
+      const firstEmpty = digits.findIndex(d => !d);
+      refs.current[firstEmpty >= 0 ? firstEmpty : 0]?.focus();
+    }, 100);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={{ display: 'flex', gap: 8, justifyContent: 'center', margin: '8px 0 20px' }}>
@@ -129,12 +141,13 @@ function OtpInput({ value, onChange, disabled }) {
 }
 
 // ── Submit button ─────────────────────────────────────────────────────────────
-function SubmitBtn({ children, onClick, loading, disabled }) {
+function SubmitBtn({ children, onClick, loading, disabled, type = 'submit' }) {
   return (
     <motion.button
       whileHover={!disabled ? { scale: 1.02 } : {}}
       whileTap={!disabled   ? { scale: 0.98 } : {}}
       onClick={onClick}
+      type={type}
       disabled={disabled || loading}
       style={{
         width: '100%', padding: '14px 0', borderRadius: 14, border: 'none',
@@ -180,15 +193,154 @@ function Tabs({ active, onChange }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  OTP VERIFICATION PANEL
+//  Used for BOTH signup verification AND when login detects unverified user.
+// ══════════════════════════════════════════════════════════════════════════════
+function OtpVerificationPanel({ email, onBack, otpType = 'signup' }) {
+  const { verifyEmailOtp, resendOtp } = useAuth();
+
+  const [otp, setOtp]         = useState('');
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Resend cooldown (60s)
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownInterval = useRef(null);
+
+  const startCooldown = useCallback(() => {
+    setResendCooldown(60);
+    clearInterval(cooldownInterval.current);
+    cooldownInterval.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownInterval.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => () => clearInterval(cooldownInterval.current), []);
+
+  // Auto-submit when all 6 digits filled
+  useEffect(() => {
+    if (otp.length === 6 && !busy) {
+      handleVerify();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp]);
+
+  const handleVerify = useCallback(async () => {
+    if (busy || otp.length < 6) return;
+    setError(''); setSuccess('');
+    setBusy(true);
+    try {
+      await verifyEmailOtp(email, otp);
+      // onAuthStateChange fires → isLoggedIn + isEmailVerified → dashboard
+    } catch (err) {
+      setError(err.message);
+      setOtp('');
+      setBusy(false);
+    }
+  }, [email, otp, busy, verifyEmailOtp]);
+
+  const handleResend = useCallback(async () => {
+    if (resendCooldown > 0 || busy) return;
+    setError(''); setSuccess('');
+    setBusy(true);
+    try {
+      await resendOtp(email);
+      setSuccess('New code sent! Check your inbox.');
+      startCooldown();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [email, busy, resendCooldown, resendOtp, startCooldown]);
+
+  return (
+    <motion.div key="otp-panel"
+      initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -24 }}>
+
+      <AnimatePresence mode="wait">
+        {error   && <Alert key="e" type="error"   msg={error} />}
+        {success && <Alert key="s" type="success" msg={success} />}
+      </AnimatePresence>
+
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <motion.div
+          animate={{ scale: [1, 1.1, 1] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          style={{ fontSize: 36, marginBottom: 10 }}>📬</motion.div>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
+          Enter the <strong style={{ color: '#a78bfa' }}>6-digit code</strong> sent to<br/>
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>
+            {email}
+          </span>
+        </p>
+        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'var(--font-mono)',
+                    marginTop: 6 }}>
+          Check your spam folder if you don't see it.
+        </p>
+      </div>
+
+      <OtpInput value={otp} onChange={setOtp} disabled={busy} />
+
+      <SubmitBtn onClick={handleVerify} loading={busy}
+        disabled={otp.length < 6 || busy} type="button">
+        Verify & Continue ✓
+      </SubmitBtn>
+
+      {/* Resend button */}
+      <div style={{ textAlign: 'center', marginTop: 14 }}>
+        <button
+          onClick={handleResend}
+          disabled={busy || resendCooldown > 0}
+          style={{
+            background: 'none', border: 'none', cursor: busy || resendCooldown > 0 ? 'not-allowed' : 'pointer',
+            color: resendCooldown > 0 ? 'rgba(255,255,255,0.2)' : 'rgba(139,92,246,0.7)',
+            fontSize: 12, fontFamily: 'var(--font-mono)',
+            transition: 'color 0.2s',
+          }}
+        >
+          {resendCooldown > 0
+            ? `Resend code in ${resendCooldown}s`
+            : '📨 Resend code'}
+        </button>
+      </div>
+
+      {onBack && (
+        <div style={{ textAlign: 'center', marginTop: 10 }}>
+          <button onClick={onBack} disabled={busy}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+                     color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>
+            ← Go back
+          </button>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  LOGIN PANEL
 // ══════════════════════════════════════════════════════════════════════════════
 function LoginPanel() {
-  const { login } = useAuth();
-  const [email, setEmail]     = useState('');
+  const { login, pendingVerifyEmail, setPendingVerifyEmail } = useAuth();
+
+  const [email, setEmail]     = useState(pendingVerifyEmail || '');
   const [password, setPass]   = useState('');
   const [showPass, setShow]   = useState(false);
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState('');
+  // When login detects unverified user, show OTP panel inline
+  const [showOtp, setShowOtp] = useState(!!pendingVerifyEmail);
+
+  // If the context already has a pending email (from a previous login attempt), show OTP
+  useEffect(() => {
+    if (pendingVerifyEmail) { setEmail(pendingVerifyEmail); setShowOtp(true); }
+  }, [pendingVerifyEmail]);
 
   const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
@@ -200,13 +352,32 @@ function LoginPanel() {
     setBusy(true);
     try {
       await login(em, password);
-      // onAuthStateChange in AuthContext fires → isLoggedIn → dashboard
+      // onAuthStateChange fires → isLoggedIn → dashboard
     } catch (err) {
-      setError(err.message);
+      if (err.code === 'EMAIL_NOT_VERIFIED') {
+        // Show OTP panel
+        setShowOtp(true);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setBusy(false);
     }
   }, [email, password, busy, login]);
+
+  if (showOtp) {
+    return (
+      <OtpVerificationPanel
+        email={email}
+        otpType="signup"
+        onBack={() => {
+          setShowOtp(false);
+          setPendingVerifyEmail(null);
+          setError('');
+        }}
+      />
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} autoComplete="on">
@@ -231,6 +402,11 @@ function LoginPanel() {
 
       <div style={{ height: 8 }} />
       <SubmitBtn loading={busy}>Sign In →</SubmitBtn>
+
+      <p style={{ textAlign: 'center', marginTop: 14, fontSize: 11,
+                  color: 'rgba(255,255,255,0.25)', fontFamily: 'var(--font-mono)' }}>
+        No OTP required for login
+      </p>
     </form>
   );
 }
@@ -239,27 +415,17 @@ function LoginPanel() {
 //  SIGNUP PANEL  (Step 1: form → Step 2: OTP)
 // ══════════════════════════════════════════════════════════════════════════════
 function SignupPanel() {
-  const { signUp, verifyEmailOtp } = useAuth();
+  const { signUp } = useAuth();
 
-  // Step state
   const [step, setStep]       = useState('form'); // 'form' | 'sending' | 'otp'
   const [email, setEmail]     = useState('');
   const [username, setUname]  = useState('');
   const [password, setPass]   = useState('');
   const [confirmPw, setConf]  = useState('');
   const [showPass, setShow]   = useState(false);
-  const [otp, setOtp]         = useState('');
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
-
-  // Auto-submit when all 6 digits filled
-  useEffect(() => {
-    if (otp.length === 6 && step === 'otp' && !busy) {
-      handleVerify();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otp]);
 
   const handleSignUp = useCallback(async (e) => {
     e?.preventDefault();
@@ -279,7 +445,7 @@ function SignupPanel() {
     try {
       await signUp(em, password, un);
       setStep('otp');
-      setSuccess(`Verification code sent to ${em} — check your inbox!`);
+      setSuccess(`Code sent to ${em} — check your inbox!`);
     } catch (err) {
       setError(err.message);
       setStep('form');
@@ -288,66 +454,23 @@ function SignupPanel() {
     }
   }, [email, username, password, confirmPw, busy, signUp]);
 
-  const handleVerify = useCallback(async () => {
-    if (busy || otp.length < 6) return;
-    setError(''); setSuccess('');
-    setBusy(true);
-    try {
-      await verifyEmailOtp(email.trim().toLowerCase(), otp);
-      // onAuthStateChange fires → user logged in → dashboard
-    } catch (err) {
-      setError(err.message);
-      setOtp('');
-      setBusy(false);
-    }
-  }, [email, otp, busy, verifyEmailOtp]);
-
-  const handleBack = () => {
-    setStep('form'); setOtp(''); setError(''); setSuccess('');
-  };
-
-  // ── OTP step ────────────────────────────────────────────────────
-  if (step === 'otp' || step === 'verifying') {
+  // OTP step — reuses OtpVerificationPanel
+  if (step === 'otp') {
     return (
-      <motion.div key="otp-step"
-        initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -24 }}>
-
+      <>
         <AnimatePresence mode="wait">
-          {error   && <Alert key="e" type="error"   msg={error} />}
           {success && <Alert key="s" type="success" msg={success} />}
         </AnimatePresence>
-
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 2 }}
-            style={{ fontSize: 36, marginBottom: 10 }}>📬</motion.div>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
-            Enter the <strong style={{ color: '#a78bfa' }}>6-digit code</strong> sent to<br/>
-            <span style={{ fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>
-              {email}
-            </span>
-          </p>
-        </div>
-
-        <OtpInput value={otp} onChange={setOtp} disabled={busy} />
-
-        <SubmitBtn onClick={handleVerify} loading={busy}
-          disabled={otp.length < 6 || busy}>
-          Verify & Create Account ✓
-        </SubmitBtn>
-
-        <div style={{ textAlign: 'center', marginTop: 16 }}>
-          <button onClick={handleBack} disabled={busy}
-            style={{ background: 'none', border: 'none', cursor: 'pointer',
-                     color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
-            ← Change details
-          </button>
-        </div>
-      </motion.div>
+        <OtpVerificationPanel
+          email={email}
+          otpType="signup"
+          onBack={() => { setStep('form'); setError(''); setSuccess(''); }}
+        />
+      </>
     );
   }
 
-  // ── Form step ───────────────────────────────────────────────────
+  // Form step
   return (
     <motion.div key="form-step"
       initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }}
@@ -394,7 +517,9 @@ function SignupPanel() {
 //  MAIN AuthScreen
 // ══════════════════════════════════════════════════════════════════════════════
 const AuthScreen = () => {
-  const [tab, setTab] = useState('login');
+  const { pendingVerifyEmail } = useAuth();
+  // If there's a pending verify email, start on login tab (which shows OTP inline)
+  const [tab, setTab] = useState(pendingVerifyEmail ? 'login' : 'login');
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative"
@@ -432,7 +557,9 @@ const AuthScreen = () => {
             </span>
           </h1>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-mono)' }}>
-            {tab === 'login' ? 'Welcome back. Sign in to continue.' : 'Create your account — it only takes a minute.'}
+            {tab === 'login'
+              ? 'Welcome back. Sign in to continue.'
+              : 'Create your account — verify with email OTP.'}
           </p>
         </div>
 

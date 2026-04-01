@@ -3,229 +3,311 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SmartChat X — The Luminescent Void</title>
-  <meta name="description" content="SmartChat X v5.0 — Immersive, high-fidelity communication where deep space depth meets kinetic energy. Powered by Groq AI and WebRTC." />
+  <title>SmartChatX — Private Messaging, Reimagined</title>
+  <meta name="description" content="SmartChatX — Secure, private 1-to-1 messaging with AI-powered chat, OTP email verification, real-time contacts, and end-to-end encryption. Built by Alok Kumar Sahu." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
 
   <style>
-    /* ─── DESIGN TOKENS — THE LUMINESCENT VOID ─── */
+    /* ─── DESIGN TOKENS ─── */
     :root {
-      /* Backgrounds & Surfaces (Tonal Layering) */
-      --surface-dim:               #0d0d1a; /* Base Layer */
-      --surface:                   #0d0d1a;
-      --surface-container-lowest:  #000000;
-      --surface-container-low:     #121221; /* Secondary Layer */
-      --surface-container:         #181828;
-      --surface-container-high:    #1e1e30; /* Elevated Layer */
-      --surface-container-highest: #242437;
-      --surface-variant:           #242437;
-      
-      /* Primary Brand Colors */
-      --primary:      #8ff5ff; /* Luminescent Cyan */
-      --primary-dim:  #00deec;
-      --secondary:    #d277ff; /* Kinetic Purple */
-      --tertiary:     #ff6c92; /* High-attention Pink */
-      
-      /* Text Colors (Legacy "on-surface") */
-      --on-surface:   #e6e3f7; /* Off-white to prevent eye-bleed */
-      --on-surface-variant: #aba9bc;
-      
-      /* Accents & Outlines (Ghost Borders) */
-      --outline:      #757485;
-      --outline-variant: rgba(71, 70, 86, 0.15); /* Ghost Border Rule: 15% opacity */
-      
-      /* Gradients & Shadows */
-      --grad-kinetic: linear-gradient(135deg, #00f0ff, #b347ea);
-      --shadow-ambient: 0 40px 60px rgba(143, 245, 255, 0.05); /* Tinted subtle shadow */
+      --bg:           #07071a;
+      --bg-raised:    #0e0e28;
+      --bg-card:      #12122e;
+      --bg-card-hi:   #1a1a3a;
+      --primary:      #818cf8; /* indigo */
+      --primary-glow: rgba(99,102,241,0.35);
+      --secondary:    #a78bfa; /* violet */
+      --accent:       #34d399; /* emerald */
+      --text:         #e8e8f8;
+      --text-dim:     #9090b8;
+      --text-faint:   rgba(255,255,255,0.25);
+      --grad:         linear-gradient(135deg, #6366f1, #8b5cf6);
+      --grad-text:    linear-gradient(90deg, #818cf8, #a78bfa, #c084fc);
+      --border:       rgba(129,140,248,0.12);
+      --shadow:       0 24px 64px rgba(99,102,241,0.06);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    
     html { scroll-behavior: smooth; overflow-x: hidden; }
-    
     body {
       font-family: 'Inter', sans-serif;
-      background: var(--surface-dim);
-      color: var(--on-surface);
+      background: var(--bg);
+      color: var(--text);
       overflow-x: hidden;
-      line-height: 1.6;
+      line-height: 1.65;
     }
+    a { text-decoration: none; color: inherit; }
 
-    /* ─── THE NO-LINE RULE ─── */
-    /* Major sections use background shifts, NOT borders */
-    section { position: relative; padding: 10rem 2rem; border: none; }
-    .bg-low { background: var(--surface-container-low); }
-    .bg-dim { background: var(--surface-dim); }
-
-    h1, h2, h3, .brand-font {
-      font-family: 'Space Grotesk', sans-serif;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-
-    /* ─── TYPOGRAPHY: EDITORIAL CONTRAST ─── */
-    .display-lg {
-      font-size: clamp(3rem, 8vw, 5.5rem);
-      line-height: 1.1;
-      letter-spacing: -0.04em;
-      margin-bottom: 2.5rem; /* Large white space as per spec */
-    }
-
-    .editorial-gap { margin-bottom: 4rem; }
-
-    .shimmer-text {
-      background: var(--grad-kinetic);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-size: 200% auto;
-      animation: shimmer 5s linear infinite;
-    }
-
-    /* ─── NAV: ATMOSPHERIC LAYERING ─── */
+    /* ─── NAV ─── */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-      padding: 1.5rem 3rem;
-      background: rgba(13, 13, 26, 0.6);
-      backdrop-filter: blur(40px); /* Advanced Glassmorphism */
+      padding: 1.25rem 3rem;
+      background: rgba(7,7,26,0.5);
+      backdrop-filter: blur(32px);
+      border-bottom: 1px solid var(--border);
       display: flex; justify-content: space-between; align-items: center;
-      transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+      transition: all 0.4s ease;
     }
-    nav.scrolled { background: rgba(13, 13, 26, 0.95); padding: 1rem 3rem; }
-
+    nav.scrolled { background: rgba(7,7,26,0.92); padding: 0.9rem 3rem; }
     .nav-logo {
-      font-size: 1.25rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;
-      display: flex; align-items: center; gap: 0.75rem;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.2rem; font-weight: 800;
+      display: flex; align-items: center; gap: 0.6rem;
     }
-
-    .nav-links { display: flex; gap: 2.5rem; align-items: center; }
+    .logo-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; border-radius: 10px;
+      background: var(--grad); font-size: 17px;
+      box-shadow: 0 0 20px var(--primary-glow);
+    }
+    .logo-text { background: var(--grad-text); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .nav-links { display: flex; gap: 2rem; align-items: center; }
     .nav-links a {
-      font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em;
-      color: var(--on-surface-variant); transition: color 0.3s;
+      font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--text-dim); transition: color 0.25s;
     }
     .nav-links a:hover { color: var(--primary); }
 
     /* ─── BUTTONS ─── */
     .btn {
-      display: inline-flex; align-items: center; gap: 0.75rem;
-      padding: 1rem 2.5rem; border-radius: 9999px; /* Rounding rule: full */
+      display: inline-flex; align-items: center; gap: 0.6rem;
+      padding: 0.85rem 2rem; border-radius: 50px;
       font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 700;
-      letter-spacing: 0.05em; transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-      cursor: pointer; position: relative; overflow: hidden;
+      letter-spacing: 0.04em; cursor: pointer;
+      transition: all 0.35s cubic-bezier(0.23, 1, 0.32, 1);
     }
-
     .btn-primary {
-      background: var(--grad-kinetic);
-      color: #003f43; /* on-primary-fixed */
-      box-shadow: 0 0 20px rgba(0, 240, 255, 0.15);
+      background: var(--grad); color: #fff;
+      box-shadow: 0 0 24px var(--primary-glow);
     }
-    .btn-primary:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 10px 40px rgba(0, 240, 255, 0.4);
+    .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 12px 36px var(--primary-glow); }
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border); color: var(--text-dim);
     }
-
-    .btn-secondary {
-      background: transparent;
-      border: 1px solid var(--outline-variant); /* Ghost Border */
-      color: var(--on-surface);
-    }
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.03);
-      border-color: rgba(255, 255, 255, 0.1);
-      transform: translateY(-4px);
-    }
+    .btn-ghost:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-3px); }
+    .btn-sm { padding: 0.5rem 1.2rem; font-size: 0.75rem; }
 
     /* ─── HERO ─── */
     .hero {
-      height: 100vh; display: flex; align-items: center; justify-content: center;
-      text-align: center; padding-top: 5rem;
-      background: radial-gradient(circle at 50% -20%, rgba(0, 240, 255, 0.08), transparent 70%);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      text-align: center; padding: 6rem 2rem 4rem;
+      background:
+        radial-gradient(ellipse at 30% 10%, rgba(99,102,241,0.10) 0%, transparent 55%),
+        radial-gradient(ellipse at 70% 80%, rgba(139,92,246,0.07) 0%, transparent 55%);
     }
-    .hero-content { max-width: 1000px; }
-    .hero-label {
-      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--secondary);
-      text-transform: uppercase; letter-spacing: 0.4em; margin-bottom: 2rem;
-      display: block; opacity: 0.8;
+    .hero-inner { max-width: 860px; }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 1.2rem; border-radius: 50px;
+      background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+      color: var(--primary); letter-spacing: 0.15em; text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+    .hero h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.8rem, 7vw, 5rem);
+      font-weight: 800; letter-spacing: -0.04em; line-height: 1.08;
+      margin-bottom: 1.5rem;
+    }
+    .grad-text { background: var(--grad-text); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero-sub {
+      font-size: 1.1rem; color: var(--text-dim);
+      max-width: 640px; margin: 0 auto 2.5rem; line-height: 1.75;
+    }
+    .hero-btns { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .hero-stats {
+      margin-top: 4rem; display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap;
+    }
+    .stat { text-align: center; }
+    .stat-num {
+      font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 800;
+      background: var(--grad-text); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-label { font-size: 0.75rem; color: var(--text-faint); font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
+
+    /* ─── FEATURES GRID ─── */
+    .section { padding: 7rem 2rem; }
+    .section-label {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--primary);
+      text-transform: uppercase; letter-spacing: 0.3em; margin-bottom: 1rem;
+    }
+    .section-title {
+      font-family: 'Space Grotesk', sans-serif; font-size: clamp(2rem, 4vw, 2.8rem);
+      font-weight: 800; letter-spacing: -0.03em; margin-bottom: 1rem;
+    }
+    .section-sub { color: var(--text-dim); max-width: 540px; margin: 0 auto; font-size: 1rem; }
+    .center { text-align: center; }
+
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem; max-width: 1100px; margin: 4rem auto 0;
+    }
+    .feat-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px;
+      padding: 2.5rem; transition: all 0.4s cubic-bezier(0.23,1,0.32,1);
+      position: relative; overflow: hidden;
+    }
+    .feat-card::before {
+      content: ''; position: absolute; inset: 0; border-radius: 20px;
+      background: radial-gradient(circle at 0% 0%, rgba(99,102,241,0.05), transparent 70%);
+      opacity: 0; transition: opacity 0.4s;
+    }
+    .feat-card:hover { transform: translateY(-8px); border-color: rgba(129,140,248,0.3); background: var(--bg-card-hi); box-shadow: var(--shadow); }
+    .feat-card:hover::before { opacity: 1; }
+    .feat-icon {
+      width: 52px; height: 52px; border-radius: 14px; margin-bottom: 1.5rem;
+      background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.15);
+      display: flex; align-items: center; justify-content: center; font-size: 22px;
+    }
+    .feat-card h3 { font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 700; margin-bottom: 0.75rem; }
+    .feat-card p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.7; }
+
+    /* ─── HOW IT WORKS ─── */
+    .bg-raised { background: var(--bg-raised); }
+    .steps {
+      display: flex; gap: 2rem; max-width: 960px; margin: 4rem auto 0;
+      flex-wrap: wrap; justify-content: center;
+    }
+    .step {
+      flex: 1; min-width: 200px; max-width: 250px;
+      text-align: center; position: relative;
+    }
+    .step-num {
+      width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 1.25rem;
+      background: var(--grad); display: flex; align-items: center; justify-content: center;
+      font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: 1.1rem;
+      box-shadow: 0 0 24px var(--primary-glow);
+    }
+    .step h4 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; margin-bottom: 0.5rem; }
+    .step p { color: var(--text-dim); font-size: 0.85rem; line-height: 1.6; }
+    .step-connector {
+      position: absolute; top: 26px; left: calc(100% + 0.5rem); width: 3rem;
+      border-top: 1px dashed rgba(129,140,248,0.2);
     }
 
-    /* ─── FEATURE CARDS: 3D TILT ─── */
-    .grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 2rem; max-width: 1200px; margin: 0 auto;
+    /* ─── SPLIT SECTION ─── */
+    .split { display: flex; gap: 5rem; align-items: center; max-width: 1100px; margin: 0 auto; }
+    .split.reverse { flex-direction: row-reverse; }
+    .split-text { flex: 1; }
+    .split-text h2 { font-family: 'Space Grotesk', sans-serif; font-size: 2.4rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 1.25rem; }
+    .split-text p  { color: var(--text-dim); font-size: 1rem; line-height: 1.75; margin-bottom: 2rem; }
+    .split-visual {
+      flex: 1; border-radius: 24px; overflow: hidden; position: relative;
+      background: var(--bg-card); border: 1px solid var(--border);
+      min-height: 380px; display: flex; align-items: center; justify-content: center;
     }
 
-    .card {
-      background: var(--surface-container-low); padding: 3rem;
-      border-radius: 1.5rem; /* xl rounding */
-      transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
-      transform-style: preserve-3d;
-      perspective: 1000px;
+    /* ─── MOCK CHAT UI ─── */
+    .mock-chat { width: 100%; padding: 1.5rem; }
+    .mock-header {
+      display: flex; align-items: center; gap: 0.75rem; padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border); margin-bottom: 1rem;
     }
-    .card:hover {
-      background: var(--surface-container-highest);
-      transform: translateY(-10px) rotateX(2deg) rotateY(2deg);
-      box-shadow: var(--shadow-ambient);
+    .mock-avatar {
+      width: 36px; height: 36px; border-radius: 50%; background: var(--grad);
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
     }
-    .card-icon {
-      font-size: 2.5rem; margin-bottom: 2rem; color: var(--primary);
-      filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.2));
+    .mock-name { font-weight: 700; font-size: 0.9rem; }
+    .mock-status { font-size: 0.7rem; color: var(--accent); }
+    .mock-online { display: flex; align-items: center; gap: 4px; }
+    .mock-dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
+    .mock-msg { margin-bottom: 0.75rem; display: flex; }
+    .mock-msg.sent { justify-content: flex-end; }
+    .mock-bubble {
+      max-width: 75%; padding: 0.6rem 1rem; border-radius: 16px;
+      font-size: 0.82rem; line-height: 1.5;
     }
-    .card h3 { font-size: 1.25rem; margin-bottom: 1rem; color: var(--on-surface); }
-    .card p { font-size: 0.95rem; color: var(--on-surface-variant); line-height: 1.7; }
+    .mock-bubble.recv { background: var(--bg-card-hi); border-radius: 4px 16px 16px 16px; color: var(--text); }
+    .mock-bubble.sent { background: var(--grad); color: #fff; border-radius: 16px 4px 16px 16px; }
+    .mock-time { font-size: 0.65rem; color: var(--text-faint); margin-top: 3px; text-align: right; }
+    .mock-input {
+      display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;
+      background: var(--bg-raised); border-radius: 50px; padding: 0.5rem 1rem;
+      border: 1px solid var(--border);
+    }
+    .mock-input-text { flex: 1; font-size: 0.8rem; color: var(--text-faint); }
 
-    /* ─── FOUNDER SECTION ─── */
+    /* ─── FOUNDER ─── */
     .founder-wrap {
-      max-width: 1000px; margin: 0 auto;
+      max-width: 900px; margin: 4rem auto 0;
       display: flex; gap: 4rem; align-items: center;
-      padding: 5rem; border-radius: 2.5rem;
-      background: var(--surface-container-low);
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 28px; padding: 4rem;
     }
-    .founder-img {
-      width: 280px; height: 280px; border-radius: 50%;
-      position: relative; flex-shrink: 0;
+    .founder-img-wrap { position: relative; flex-shrink: 0; }
+    .founder-img-ring {
+      width: 180px; height: 180px; border-radius: 50%;
+      background: var(--grad); padding: 3px;
+      box-shadow: 0 0 40px var(--primary-glow);
     }
-    .founder-img::before {
-      content: ''; position: absolute; inset: -4px; border-radius: 50%;
-      background: var(--grad-kinetic); z-index: 0;
-      animation: spin 10s linear infinite;
-    }
-    .founder-img img {
+    .founder-img-inner {
       width: 100%; height: 100%; border-radius: 50%;
-      object-fit: cover; position: relative; z-index: 1;
-      border: 6px solid var(--surface-container-low);
+      overflow: hidden; background: var(--bg-card);
+      display: flex; align-items: center; justify-content: center; font-size: 60px;
     }
-    .founder-info h2 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-    .founder-title {
-      font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
-      color: var(--primary); text-transform: uppercase; letter-spacing: 0.2em;
-      margin-bottom: 2rem; display: block;
+    .founder-info .tag {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--primary);
+      text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 0.75rem; display: block;
     }
-    .founder-info p { color: var(--on-surface-variant); margin-bottom: 2.5rem; }
+    .founder-info h2 { font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 800; margin-bottom: 1rem; }
+    .founder-info p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.75; margin-bottom: 1.75rem; }
+    .founder-links { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 
-    /* ─── ASYMMETRIC CONTENT ─── */
-    .asymmetric-section {
-      display: flex; align-items: center; gap: 6rem;
+    /* ─── CTA BANNER ─── */
+    .cta-banner {
+      max-width: 860px; margin: 0 auto;
+      background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.06));
+      border: 1px solid rgba(99,102,241,0.15); border-radius: 28px;
+      padding: 5rem 3rem; text-align: center;
     }
-    .asymmetric-section:nth-child(even) { flex-direction: row-reverse; }
-    .half-col { flex: 1; }
-    .asymmetric-section .shimmer-text { font-size: 3.5rem; margin-bottom: 2rem; }
+    .cta-banner h2 { font-family: 'Space Grotesk', sans-serif; font-size: 2.8rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 1.25rem; }
+    .cta-banner p { color: var(--text-dim); font-size: 1rem; margin-bottom: 2.5rem; }
+
+    /* ─── FOOTER ─── */
+    footer {
+      padding: 3rem 2rem 2rem; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+      max-width: 1200px; margin: 0 auto;
+    }
+    .footer-brand { font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: 1rem; }
+    .footer-copy { font-size: 0.75rem; color: var(--text-faint); font-family: 'JetBrains Mono', monospace; }
+    .footer-links { display: flex; gap: 1.5rem; }
+    .footer-links a { font-size: 0.78rem; color: var(--text-dim); transition: color 0.2s; }
+    .footer-links a:hover { color: var(--primary); }
 
     /* ─── ANIMATIONS ─── */
-    @keyframes shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+    @keyframes shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 
-    /* ─── DECORATIVE PARTICLES ─── */
-    #particles { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.4; }
+    /* ─── CANVAS ─── */
+    #particles { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.3; }
+
+    /* ─── GLOW BADGE ─── */
+    .security-badges {
+      display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 2rem;
+    }
+    .badge-pill {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.35rem 0.9rem; border-radius: 50px;
+      background: rgba(52,211,153,0.06); border: 1px solid rgba(52,211,153,0.15);
+      font-size: 0.72rem; color: var(--accent); font-family: 'JetBrains Mono', monospace;
+    }
 
     /* ─── RESPONSIVE ─── */
-    @media (max-width: 968px) {
+    @media (max-width: 900px) {
       .nav-links { display: none; }
-      .founder-wrap { flex-direction: column; text-align: center; padding: 3rem; }
-      .asymmetric-section { flex-direction: column !important; text-align: center; gap: 3rem; }
-      .display-lg { font-size: 3.5rem; }
+      .split { flex-direction: column !important; gap: 2.5rem; }
+      .founder-wrap { flex-direction: column; text-align: center; padding: 2.5rem; gap: 2rem; }
+      .founder-links { justify-content: center; }
+      .hero-stats { gap: 2rem; }
+      footer { flex-direction: column; text-align: center; }
+      .step-connector { display: none; }
     }
   </style>
 </head>
@@ -233,162 +315,271 @@
 
 <canvas id="particles"></canvas>
 
+<!-- NAV -->
 <nav id="navbar">
-  <div class="nav-logo brand-font"><span class="shimmer-text">⚡</span> SmartChat X</div>
+  <div class="nav-logo">
+    <span class="logo-icon">⚡</span>
+    <span class="logo-text">SmartChatX</span>
+  </div>
   <div class="nav-links">
     <a href="#features">Features</a>
-    <a href="#architecture">Architecture</a>
-    <a href="#founder">Founder</a>
-    <a href="/app" class="btn btn-primary" style="padding: 0.5rem 1.5rem; font-size: 0.75rem;">Launch App</a>
+    <a href="#how-it-works">How It Works</a>
+    <a href="#founder">About</a>
+    <a href="https://smartx.alokkumarsahu.in" class="btn btn-primary btn-sm">Launch App</a>
   </div>
 </nav>
 
+<!-- HERO -->
 <section class="hero">
-  <div class="hero-content">
-    <span class="hero-label">The Luminescent Void — SmartChat X v5.0</span>
-    <h1 class="display-lg">The Future of <br/><span class="shimmer-text">Deep Communication</span></h1>
-    <p class="on-surface-variant editorial-gap" style="max-width: 700px; margin-left: auto; margin-right: auto; font-size: 1.15rem;">
-      An immersive communication instrument crafted for the modern era. 
-      Bridging the gap between high-fidelity networking and intelligent AI systems.
+  <div class="hero-inner">
+    <div class="hero-badge">
+      <span class="badge-dot"></span>
+      Now Live — Secure Private Messaging
+    </div>
+    <h1>
+      Private Messaging,<br/>
+      <span class="grad-text">Built for Trust.</span>
+    </h1>
+    <p class="hero-sub">
+      SmartChatX is a secure, real-time private messaging platform with email OTP verification, 
+      AI-powered chat assistance, and a contact-first experience — no public rooms, just your people.
     </p>
-    <div class="flex-btns" style="display: flex; gap: 1.5rem; justify-content: center;">
-      <a href="/app" class="btn btn-primary">🚀 Launch System</a>
-      <a href="#features" class="btn btn-secondary">Explore Design ↓</a>
+    <div class="hero-btns">
+      <a href="https://smartx.alokkumarsahu.in" class="btn btn-primary">🚀 Open App</a>
+      <a href="#features" class="btn btn-ghost">See Features ↓</a>
+    </div>
+
+    <div class="security-badges">
+      <span class="badge-pill">🔒 OTP Email Verification</span>
+      <span class="badge-pill">🛡 Supabase Auth</span>
+      <span class="badge-pill">🔐 RLS-Protected Data</span>
+      <span class="badge-pill">⚡ Real-time Messages</span>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-num">6-digit</div><div class="stat-label">OTP Security</div></div>
+      <div class="stat"><div class="stat-num">&lt;200ms</div><div class="stat-label">Message Delivery</div></div>
+      <div class="stat"><div class="stat-num">100%</div><div class="stat-label">Private 1-to-1</div></div>
     </div>
   </div>
 </section>
 
-<section id="features" class="bg-low">
-  <div style="text-align: center; margin-bottom: 5rem;">
-    <h2 class="shimmer-text" style="font-size: 3rem; margin-bottom: 1.5rem;">Precision Features</h2>
-    <p class="on-surface-variant" style="max-width: 600px; margin: 0 auto;">No lines. Just tonal depth and kinetic light.</p>
+<!-- FEATURES -->
+<section class="section bg-raised" id="features">
+  <div class="center">
+    <p class="section-label">What's Inside</p>
+    <h2 class="section-title">Everything you need, <span class="grad-text">nothing you don't.</span></h2>
+    <p class="section-sub">Designed for real conversations between real people — secure, fast, and clean.</p>
   </div>
-  
-  <div class="grid">
-    <div class="card">
-      <div class="card-icon"><i class="fas fa-brain"></i></div>
-      <h3>AI Singularity</h3>
-      <p>Groq-powered Llama 3.3 integration. Context-aware intelligence baked into every message, summarizing the noise into signal.</p>
+  <div class="features-grid">
+    <div class="feat-card">
+      <div class="feat-icon">🔐</div>
+      <h3>Email OTP Verification</h3>
+      <p>Sign up with email + password. A 6-digit code is sent to your inbox via Brevo SMTP — no magic links, no weak links.</p>
     </div>
-    <div class="card">
-      <div class="card-icon"><i class="fas fa-bolt"></i></div>
-      <h3>Multi-Protocol P2P</h3>
-      <p>TCP for reliability, UDP for speed. Automatic protocol switching based on content analysis and network latency.</p>
+    <div class="feat-card">
+      <div class="feat-icon">💬</div>
+      <h3>Contact-First Messaging</h3>
+      <p>No global chat rooms. Add contacts, get approved, then message privately. Your conversations stay between you and your people.</p>
     </div>
-    <div class="card">
-      <div class="card-icon"><i class="fas fa-video"></i></div>
-      <h3>HD Mirroring</h3>
-      <p>Real-time screen share and video calls with zero-latency ice candidate negotiation. Encryption at the core.</p>
+    <div class="feat-card">
+      <div class="feat-icon">⚡</div>
+      <h3>Real-Time Delivery</h3>
+      <p>Messages arrive instantly via Supabase Realtime subscriptions. Typing indicators, read receipts, and live presence — all built in.</p>
     </div>
-  </div>
-</section>
-
-<section class="bg-dim">
-  <div class="asymmetric-section">
-    <div class="half-col">
-      <h2 class="shimmer-text">Design with Light, Not Lines.</h2>
-      <p class="on-surface-variant editorial-gap" style="font-size: 1.25rem;">
-        We eschew rigid boxes. Boundaries are defined by tonal transitions—light emerging from the luminescent void. 
-        A UI that breaths.
-      </p>
-      <a href="/app" class="btn btn-primary">Experience Depth</a>
+    <div class="feat-card">
+      <div class="feat-icon">🤖</div>
+      <h3>AI Chat Assistant</h3>
+      <p>Powered by Groq + Llama 3.3. Get intelligent replies, message summaries, and context-aware assistance right inside your chat.</p>
     </div>
-    <div class="half-col" style="background: var(--surface-container-high); height: 400px; border-radius: 2rem; position: relative; overflow: hidden;">
-       <div style="position: absolute; top: 20%; left: 10%; width: 50%; height: 10px; background: var(--grad-kinetic); border-radius: 10px; opacity: 0.3;"></div>
-       <div style="position: absolute; top: 40%; left: 10%; width: 70%; height: 10px; background: var(--grad-kinetic); border-radius: 10px; opacity: 0.2;"></div>
-       <div style="position: absolute; top: 60%; left: 10%; width: 40%; height: 10px; background: var(--grad-kinetic); border-radius: 10px; opacity: 0.1;"></div>
+    <div class="feat-card">
+      <div class="feat-icon">🛡</div>
+      <h3>Row-Level Security</h3>
+      <p>Every database query is guarded by Supabase RLS policies. You can only read messages you're a participant of — enforced at the DB level.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📎</div>
+      <h3>Rich Messages</h3>
+      <p>Send text, images, files, and reactions. Soft-delete messages, search within conversations, and never lose context.</p>
     </div>
   </div>
 </section>
 
-<section id="founder" class="bg-low">
-  <div class="founder-wrap">
-    <div class="founder-img">
-      <img src="images/founder.jpeg" alt="Alok Kumar Sahu" />
+<!-- HOW IT WORKS -->
+<section class="section" id="how-it-works">
+  <div class="center">
+    <p class="section-label">Getting Started</p>
+    <h2 class="section-title">Up and running <span class="grad-text">in 3 steps.</span></h2>
+    <p class="section-sub">The smoothest onboarding in private messaging.</p>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h4>Sign Up</h4>
+      <p>Enter your email, username, and password. Your account is created instantly.</p>
+      <span class="step-connector"></span>
     </div>
-    <div class="founder-info">
-      <h2>Alok Kumar Sahu</h2>
-      <span class="founder-title">Architect of the Void</span>
-      <p>
-        Full-Stack Engineer specialized in real-time systems and AI synergy. 
-        SmartChat X is a testament to the belief that communication should be an immersive art form.
-      </p>
-      <div style="display: flex; gap: 1rem;">
-        <a href="https://github.com/alokkumar2510" target="_blank" class="btn btn-secondary" style="padding: 0.6rem 1.5rem; font-size: 0.75rem;"><i class="fab fa-github"></i> Source</a>
-        <a href="mailto:alok@example.com" class="btn btn-secondary" style="padding: 0.6rem 1.5rem; font-size: 0.75rem;"><i class="fas fa-envelope"></i> Contact</a>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h4>Verify OTP</h4>
+      <p>Check your inbox for a 6-digit code. Enter it in the app to confirm your identity.</p>
+      <span class="step-connector"></span>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h4>Start Chatting</h4>
+      <p>Search for users, send contact requests, and start private conversations.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SPLIT — CHAT PREVIEW -->
+<section class="section bg-raised">
+  <div class="split">
+    <div class="split-text">
+      <p class="section-label">Live Preview</p>
+      <h2><span class="grad-text">Clean UI.</span> Powerful under the hood.</h2>
+      <p>A WhatsApp-inspired sidebar lets you see all your contacts, unread counts, and last messages at a glance. Click a contact to open a full-screen conversation — no page loads, no delays.</p>
+      <a href="https://smartx.alokkumarsahu.in" class="btn btn-primary">Try It Live</a>
+    </div>
+    <div class="split-visual">
+      <div class="mock-chat">
+        <div class="mock-header">
+          <div class="mock-avatar">👤</div>
+          <div>
+            <div class="mock-name">Rohan S.</div>
+            <div class="mock-online"><span class="mock-dot"></span><span class="mock-status">Online</span></div>
+          </div>
+        </div>
+        <div class="mock-msg">
+          <div class="mock-bubble recv">Hey! Did you see the new deployment? 👀</div>
+        </div>
+        <div style="margin-bottom:4px; padding-left: 8px;"><div class="mock-time" style="text-align:left">2:41 PM</div></div>
+        <div class="mock-msg sent">
+          <div class="mock-bubble sent">Yes! The OTP flow is finally working 🎉</div>
+        </div>
+        <div class="mock-time" style="margin-bottom:12px">2:42 PM · ✓✓</div>
+        <div class="mock-msg">
+          <div class="mock-bubble recv">Brevo SMTP was the missing piece 💡</div>
+        </div>
+        <div class="mock-input">
+          <span class="mock-input-text">Type a message…</span>
+          <span style="color:var(--primary); cursor:pointer">➤</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<footer style="padding: 5rem 2rem; text-align: center; background: var(--surface-dim);">
-  <div class="brand-font" style="font-size: 1.5rem; margin-bottom: 2rem;">⚡ SmartChat X</div>
-  <p class="on-surface-variant" style="font-size: 0.85rem; letter-spacing: 0.05em; margin-bottom: 1rem;">
-    MADE WITH <span style="color: var(--tertiary);">❤️</span> BY ALOK KUMAR SAHU
-  </p>
-  <div class="on-surface-variant" style="opacity: 0.4; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
-    © 2026 THE LUMINESCENT VOID • ALL RIGHTS RESERVED
+<!-- FOUNDER -->
+<section class="section" id="founder">
+  <div class="center">
+    <p class="section-label">The Builder</p>
+    <h2 class="section-title">Made by someone who <span class="grad-text">cares about privacy.</span></h2>
   </div>
-</footer>
+  <div class="founder-wrap">
+    <div class="founder-img-wrap">
+      <div class="founder-img-ring">
+        <div class="founder-img-inner">👨‍💻</div>
+      </div>
+    </div>
+    <div class="founder-info">
+      <span class="tag">// founder & lead engineer</span>
+      <h2>Alok Kumar Sahu</h2>
+      <p>
+        Full-stack engineer focused on real-time systems, AI integration, and secure authentication.
+        SmartChatX was built from scratch as a privacy-first alternative to bloated public chat platforms —
+        combining Supabase, Groq AI, and WebSocket infrastructure into one cohesive experience.
+      </p>
+      <div class="founder-links">
+        <a href="https://github.com/alokkumar2510" target="_blank" class="btn btn-ghost btn-sm"><i class="fab fa-github"></i> GitHub</a>
+        <a href="mailto:alokkumarsahu2100@gmail.com" class="btn btn-ghost btn-sm"><i class="fas fa-envelope"></i> Contact</a>
+        <a href="https://smartx.alokkumarsahu.in" class="btn btn-primary btn-sm">⚡ Open App</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="section">
+  <div class="cta-banner">
+    <h2>Ready to chat <span class="grad-text">privately?</span></h2>
+    <p>Create your free account in under 60 seconds. Verify with OTP. Start messaging.</p>
+    <a href="https://smartx.alokkumarsahu.in" class="btn btn-primary" style="font-size:1rem; padding: 1rem 3rem;">
+      🚀 Launch SmartChatX — It's Free
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div style="background: var(--bg-raised); border-top: 1px solid var(--border);">
+  <footer>
+    <div>
+      <div class="footer-brand">⚡ SmartChatX</div>
+      <div class="footer-copy" style="margin-top:4px">© 2026 Alok Kumar Sahu · All rights reserved</div>
+    </div>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#founder">About</a>
+      <a href="https://smartx.alokkumarsahu.in">App</a>
+    </div>
+    <div class="footer-copy">BUILT WITH ❤️ · POWERED BY SUPABASE + GROQ</div>
+  </footer>
+</div>
 
 <script>
-  // Particle Background Logic
+  // Particle Background
   const canvas = document.getElementById('particles');
   const ctx = canvas.getContext('2d');
-  let w, h, particles = [];
+  let w, h, pts=[];
 
   function init() {
     w = canvas.width = window.innerWidth;
     h = canvas.height = window.innerHeight;
-    particles = [];
-    for (let i = 0; i < 50; i++) {
-        particles.push({
-            x: Math.random() * w,
-            y: Math.random() * h,
-            vx: (Math.random() - 0.5) * 0.3,
-            vy: (Math.random() - 0.5) * 0.3,
-            size: Math.random() * 2 + 1
-        });
-    }
+    pts = Array.from({length:40}, () => ({
+      x: Math.random()*w, y: Math.random()*h,
+      vx: (Math.random()-0.5)*0.25, vy: (Math.random()-0.5)*0.25,
+      r: Math.random()*1.5+0.5
+    }));
   }
 
   function draw() {
     ctx.clearRect(0,0,w,h);
-    ctx.fillStyle = '#8ff5ff22';
-    particles.forEach(p => {
-        p.x += p.vx;
-        p.y += p.vy;
-        if(p.x < 0 || p.x > w) p.vx *= -1;
-        if(p.y < 0 || p.y > h) p.vy *= -1;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
-        ctx.fill();
+    pts.forEach(p => {
+      p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0||p.x>w) p.vx*=-1;
+      if(p.y<0||p.y>h) p.vy*=-1;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle='rgba(129,140,248,0.5)'; ctx.fill();
     });
+    // Draw connecting lines
+    for(let i=0;i<pts.length;i++) for(let j=i+1;j<pts.length;j++) {
+      const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<120) {
+        ctx.beginPath(); ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[j].x,pts[j].y);
+        ctx.strokeStyle=`rgba(129,140,248,${0.12*(1-d/120)})`; ctx.lineWidth=0.5; ctx.stroke();
+      }
+    }
     requestAnimationFrame(draw);
   }
 
   window.addEventListener('resize', init);
-  init();
-  draw();
+  init(); draw();
 
-  // Scroll logic
-  const navbar = document.getElementById('navbar');
-  window.addEventListener('scroll', () => {
-    if(window.scrollY > 50) navbar.classList.add('scrolled');
-    else navbar.classList.remove('scrolled');
-  });
+  // Nav scroll
+  const nav = document.getElementById('navbar');
+  window.addEventListener('scroll', () => nav.classList.toggle('scrolled', window.scrollY>60));
 
-  // Simple tilt effect for cards
-  document.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('mousemove', e => {
-      const rect = card.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width - 0.5;
-      const y = (e.clientY - rect.top) / rect.height - 0.5;
-      card.style.transform = `translateY(-10px) rotateX(${-y * 10}deg) rotateY(${x * 10}deg)`;
-    });
-    card.addEventListener('mouseleave', () => {
-      card.style.transform = '';
-    });
+  // Simple intersect fade-in for cards
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if(e.isIntersecting) { e.target.style.opacity='1'; e.target.style.transform='translateY(0)'; } });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.feat-card, .step').forEach(el => {
+    el.style.opacity='0'; el.style.transform='translateY(20px)';
+    el.style.transition='opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(el);
   });
 </script>
 </body>
