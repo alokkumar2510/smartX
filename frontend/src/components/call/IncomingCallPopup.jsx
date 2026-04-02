@@ -2,9 +2,10 @@
  * ════════════════════════════════════════════════════════
  *  IncomingCallPopup.jsx — Full-screen incoming call alert
  *
- *  Shown when 'incoming-call' is received from the
- *  Mediasoup signaling server. Displays caller info,
+ *  Shown when 'incoming_call' is received from the
+ *  WebSocket signaling relay. Displays caller info,
  *  animated avatar ring, and Accept/Reject buttons.
+ *  Connection is pure P2P WebRTC — no media server.
  * ════════════════════════════════════════════════════════
  */
 import { useEffect, useState } from 'react';
@@ -141,7 +142,7 @@ export default function IncomingCallPopup({ callState, onAccept, onReject }) {
 
             {/* Swipe hint */}
             <p className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.12)' }}>
-              Via Mediasoup SFU · End-to-end encrypted
+              Via P2P WebRTC · End-to-end encrypted
             </p>
           </div>
         </motion.div>

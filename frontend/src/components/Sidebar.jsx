@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import UserSearch from './UserSearch';
 import SettingsModal from './SettingsModal';
-import { supabase } from '../lib/supabase';
 import { API } from '../services/api';
 
 /* ─── Helpers ──────────────────────────────────────────────── */
@@ -167,6 +166,7 @@ const Sidebar = ({
   unreadCounts = {},
   onClearUnread,
   lastMessageOverrides = {}, // { [userId]: { content, created_at } } — live WS updates
+  onRespondToRequest,       // (connectionId, status) => void  — lifted to App.jsx
 }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [activeSection, setActiveSection] = useState('chats'); // 'chats' | 'requests' | 'search'
@@ -234,10 +234,6 @@ const Sidebar = ({
 
   const onlineCount = onlineIds.filter(o => acceptedIds.includes(o.user_id)).length;
 
-  const respondToRequest = async (id, status) => {
-    const { error } = await supabase.from('connections').update({ status }).eq('id', id);
-    if (error) console.error('Failed to respond to request:', error);
-  };
 
   return (
     <>
@@ -423,8 +419,8 @@ const Sidebar = ({
                             key={req.id}
                             request={req}
                             sender={sender}
-                            onAccept={() => respondToRequest(req.id, 'accepted')}
-                            onDecline={() => respondToRequest(req.id, 'rejected')}
+                            onAccept={() => onRespondToRequest?.(req.id, 'accepted')}
+                            onDecline={() => onRespondToRequest?.(req.id, 'rejected')}
                           />
                         );
                       })}

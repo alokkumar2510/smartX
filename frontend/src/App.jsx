@@ -15,7 +15,7 @@ import { useAuth, AuthProvider } from './context/AuthContext';
 import { useNetwork, NetworkProvider } from './context/NetworkContext';
 import { usePrivacy } from './hooks/usePrivacy';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
-import { useMediasoup } from './hooks/useMediasoup';
+import { useWebRTC } from './hooks/useWebRTC';
 import { supabase } from './lib/supabase';
 import { requestBackgroundSync } from './lib/serviceWorkerRegistration';
 
@@ -772,13 +772,16 @@ const ChatDashboard = () => {
   // ── Offline queue ────────────────────────────────────────
   const { send: queueSend } = useOfflineQueue(ws.current);
 
-  // ── Mediasoup SFU ────────────────────────────────────────
+  // ── Native WebRTC calling (via existing WS signaling) ────
   const {
     callState, localStream, remoteStreams,
     isMuted, isCameraOff, isScreenSharing,
     initiateCall, acceptCall, rejectCall, endCall,
     toggleMic, toggleCamera, toggleScreenShare,
-  } = useMediasoup(user, token);
+    // P2P extras
+    connectionQuality, dataMessages, sendDataMessage,
+    availableDevices, switchCamera, switchMicrophone,
+  } = useWebRTC(user, token, wsSocket);
 
   // ── Load all users ───────────────────────────────────────
   useEffect(() => {
@@ -788,6 +791,8 @@ const ChatDashboard = () => {
   }, []);
 
   // ── Connections & blocks (Supabase realtime) ─────────────
+  const loadConnectionsRef = useRef(null);
+
   useEffect(() => {
     if (!user?.id) { setConnections([]); setBlocks([]); return; }
 
@@ -796,6 +801,9 @@ const ChatDashboard = () => {
         .select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
       setConnections(data || []);
     };
+    // Keep a ref so respondToRequest can call it from outside the effect
+    loadConnectionsRef.current = loadConnections;
+
     const loadBlocks = async () => {
       const { data } = await supabase.from('blocks')
         .select('*').or(`blocker_id.eq.${user.id},blocked_id.eq.${user.id}`);
@@ -813,6 +821,31 @@ const ChatDashboard = () => {
 
     return () => supabase.removeChannel(channel);
   }, [user?.id]);
+
+  // ── Handle connection request Accept / Decline ────────────
+  const respondToRequest = useCallback(async (connectionId, status) => {
+    // Optimistic update — instantly removes the card from the Requests tab
+    setConnections(prev =>
+      prev.map(c => c.id === connectionId ? { ...c, status } : c)
+    );
+    try {
+      const { error } = await supabase
+        .from('connections')
+        .update({ status })
+        .eq('id', connectionId);
+      if (error) {
+        console.error('[Connections] update error:', error);
+        // Revert optimistic update on failure
+        loadConnectionsRef.current?.();
+      } else {
+        // Re-fetch to get authoritative server state
+        setTimeout(() => loadConnectionsRef.current?.(), 400);
+      }
+    } catch (e) {
+      console.error('[Connections] respondToRequest exception:', e);
+      loadConnectionsRef.current?.();
+    }
+  }, []);
 
   // ── Health check ─────────────────────────────────────────
   const checkHealth = useCallback(async () => {
@@ -1119,6 +1152,7 @@ const ChatDashboard = () => {
           unreadCounts={unreadMap}
           onClearUnread={clearUnread}
           lastMessageOverrides={lastMsgOverrides}  // live WS-driven updates
+          onRespondToRequest={respondToRequest}
         />
       </div>
 
@@ -1276,6 +1310,13 @@ const ChatDashboard = () => {
         onToggleScreenShare={toggleScreenShare}
         onEnd={endCall}
         username={callState?.username}
+        currentUsername={user?.username}
+        connectionQuality={connectionQuality}
+        dataMessages={dataMessages}
+        onSendDataMessage={sendDataMessage}
+        availableDevices={availableDevices}
+        onSwitchCamera={switchCamera}
+        onSwitchMicrophone={switchMicrophone}
       />
     </div>
   );
