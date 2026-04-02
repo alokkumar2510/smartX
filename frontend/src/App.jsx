@@ -89,14 +89,47 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
   // Seen-message dedup guard
   const seenIds = useRef(new Set());
 
-  // Load history whenever target changes (don't erase while loading = no flash)
+  // ── REST fallback: fetch history directly from API ─────────────
+  const fetchHistoryViaREST = useCallback(async (targetId, currentUserId) => {
+    if (!targetId || !currentUserId) return;
+    try {
+      const res = await fetch(`${API}/api/dm/history?user_id=${currentUserId}&target_id=${targetId}&limit=50`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const incoming = json.messages || [];
+      const newSeen = new Set(incoming.map(m => m.id));
+      seenIds.current = newSeen;
+      setMessages(incoming);
+      setHasMore(json.has_more || false);
+    } catch (err) {
+      console.warn('[DM] REST history fallback failed:', err.message);
+    }
+  }, []);
+
+  // Load history whenever target changes — dual strategy to never show a blank chat
   useEffect(() => {
     setHasMore(false);
-    if (ws?.readyState === 1 && targetUser?.id) {
-      seenIds.current = new Set();
+    if (!targetUser?.id) return;
+    seenIds.current = new Set();
+
+    if (ws?.readyState === 1) {
+      // WS open — request events from server
       ws.send(JSON.stringify({ type: 'get_dm_history', target_user_id: targetUser.id, limit: 50 }));
       ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id }));
+    } else {
+      // WS not ready — load via REST immediately so chat isn't blank
+      fetchHistoryViaREST(targetUser.id, currentUser?.id);
     }
+
+    // Retry via WS after 1.5s (handles race: WS was still connecting when panel opened)
+    const retryTimer = setTimeout(() => {
+      if (ws?.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'get_dm_history', target_user_id: targetUser.id, limit: 50 }));
+      }
+    }, 1500);
+
+    return () => clearTimeout(retryTimer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetUser?.id, ws]);
 
   // WS event listener
@@ -1192,6 +1225,10 @@ const ChatDashboard = () => {
   const reconnectAttempt  = useRef(0);
   const maxReconnect      = 10;
   const activeDmRef       = useRef(null); // Track active DM for unread count logic
+  const tokenRef          = useRef(token); // Always holds current token without dep issues
+
+  // Keep tokenRef in sync without triggering reconnects
+  useEffect(() => { tokenRef.current = token; }, [token]);
 
   // ── Active socket state — updates children on reconnect ──
   const [wsSocket, setWsSocket] = useState(null);
@@ -1288,8 +1325,11 @@ const ChatDashboard = () => {
   }, []);
 
   // ── WebSocket with reconnect ──────────────────────────────
+  // Uses tokenRef so token refresh doesn't recreate this callback
+  // and trigger an unnecessary WS reconnect (which would drop calls).
   const connectWS = useCallback(async () => {
-    if (!token) return;
+    const currentToken = tokenRef.current;
+    if (!currentToken) return;
     setConnectionStatus('connecting');
 
     const healthy = await checkHealth();
@@ -1306,11 +1346,13 @@ const ChatDashboard = () => {
       return;
     }
 
-    const socket = new WebSocket(`${WS_URL}/ws/${token}`);
+    const socket = new WebSocket(`${WS_URL}/ws/${currentToken}`);
 
     socket.onopen = () => {
+      console.log('[WS] Connected');
       setConnectionStatus('connected');
       setWsSocket(socket);           // tell React children about the new socket
+      ws.current = socket;           // sync ref immediately too
       reconnectAttempt.current = 0;
       const iv = setInterval(() => {
         if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'get_network_stats' }));
@@ -1388,6 +1430,7 @@ const ChatDashboard = () => {
 
     socket.onclose = (event) => {
       clearInterval(socket._statsInterval);
+      console.log('[WS] Disconnected, code:', event.code);
       // ⚠️ IMPORTANT: Do NOT call setWsSocket(null) here.
       // Setting wsSocket=null propagates into useWebRTC which would
       // destroy the RTCPeerConnection mid-call, closing the call window.
@@ -1412,11 +1455,15 @@ const ChatDashboard = () => {
 
     socket.onerror = () => {};
     ws.current = socket;
-  }, [token, checkHealth, user?.id]);
+  // token is intentionally NOT in deps — read via tokenRef to avoid reconnect on silent token refresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkHealth, user?.id]);
 
+  // Initial connection — only fires once on mount / on user change
   useEffect(() => {
-    connectWS();
-    return () => { clearTimeout(reconnectTimer.current); ws.current?.close(); };
+    // Small delay on mount so tokenRef has time to be populated
+    const tid = setTimeout(() => connectWS(), 100);
+    return () => { clearTimeout(tid); clearTimeout(reconnectTimer.current); ws.current?.close(); };
   }, [connectWS]);
 
   const retryConnection = useCallback(() => {
@@ -1757,13 +1804,35 @@ const ChatDashboard = () => {
    APP — Entry point
    ═══════════════════════════════════════════════════════════ */
 export default function App() {
-  const [showWelcome, setShowWelcome] = useState(true);
+  // Skip WelcomeScreen if user has seen it before (persisted) or has an active session.
+  // This prevents logged-in users from being forced through the splash on every refresh.
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try {
+      // If they've visited before → skip welcome
+      const seen = window.localStorage.getItem('sx_welcome_seen');
+      if (seen) return false;
+      // If they have an existing auth session → skip welcome
+      const sessionKey = 'smartchat_supabase_auth';
+      const session = window.localStorage.getItem(sessionKey);
+      if (session) {
+        const parsed = JSON.parse(session);
+        if (parsed?.access_token || parsed?.session?.access_token) return false;
+      }
+    } catch (_) {}
+    return true;
+  });
+
+  const handleStart = () => {
+    try { window.localStorage.setItem('sx_welcome_seen', '1'); } catch (_) {}
+    setShowWelcome(false);
+  };
+
   return (
     <NetworkProvider>
       <AuthProvider>
         <AnimatePresence mode="wait">
           {showWelcome ? (
-            <WelcomeScreen key="welcome" onStart={() => setShowWelcome(false)} />
+            <WelcomeScreen key="welcome" onStart={handleStart} />
           ) : (
             <AppContent key="app" />
           )}

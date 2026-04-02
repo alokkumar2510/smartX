@@ -75,7 +75,7 @@ const PC_CONFIG = {
   iceCandidatePoolSize: 10,
 };
 
-const CALL_TIMEOUT_MS      = 45000;  // Auto-cancel if no answer in 45s
+const CALL_TIMEOUT_MS      = 90000;  // Auto-cancel if no answer in 90s (extended for slow networks)
 const MAX_RECONNECT        = 5;      // Max ICE restart attempts
 const RECONNECT_GRACE_MS   = 8000;   // Wait before triggering ICE restart on 'disconnected'
 const STATS_INTERVAL_MS    = 2000;   // Quality stats polling interval
@@ -206,14 +206,23 @@ export function useWebRTC(currentUser, _token, ws) {
     return () => navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices);
   }, [refreshDevices]);
 
-  // ── WebSocket sender ──────────────────────────────────────────
-  const wsSend = useCallback((payload) => {
+  // ── WebSocket sender with retry ───────────────────────────────
+  // Retries up to 3 times with 500ms backoff if socket not yet OPEN.
+  // This prevents offer/answer messages being silently dropped when
+  // the socket connects slightly after initiateCall is called.
+  const wsSend = useCallback((payload, retries = 3) => {
     const socket = wsRef.current;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(payload));
+      console.debug('[WebRTC] WS sent:', payload.type);
       return true;
     }
-    console.warn('[WebRTC] WS not open – queued:', payload.type);
+    if (retries > 0) {
+      console.warn(`[WebRTC] WS not open (${socket?.readyState ?? 'null'}) – retrying in 500ms for:`, payload.type);
+      setTimeout(() => wsSend(payload, retries - 1), 500);
+      return false;
+    }
+    console.error('[WebRTC] WS not open after retries – dropped:', payload.type);
     return false;
   }, []);
 
@@ -597,25 +606,53 @@ export function useWebRTC(currentUser, _token, ws) {
       return;
     }
 
+    cleanupGuardRef.current = false; // Reset guard
+    isPoliteRef.current = false;     // caller = not polite
+
+    // ── PERMISSION CHECK BEFORE UI ──────────────────────────────
+    // Request camera/mic permission BEFORE showing the call UI.
+    // This prevents the call modal from opening if the user denies access.
     try {
-      cleanupGuardRef.current = false; // Reset guard
-      isPoliteRef.current = false;     // caller = not polite
-      setCallState({ status: 'ringing', type: callType, userId: targetUserId, username: targetUsername });
-      startRingtone();
+      const constraints = {
+        audio: true,
+        video: callType === 'video',
+      };
+      await navigator.mediaDevices.getUserMedia(constraints).then(s => {
+        // Immediately stop the probe stream — getLocalStream will re-acquire properly
+        s.getTracks().forEach(t => t.stop());
+      });
+    } catch (permErr) {
+      console.warn('[WebRTC] Permission denied before call start:', permErr.name);
+      const errorMsg = permErr.name === 'NotAllowedError'
+        ? `${callType === 'video' ? 'Camera/microphone' : 'Microphone'} access denied. Please allow permissions in your browser settings and try again.`
+        : permErr.name === 'NotFoundError'
+        ? 'No camera or microphone found on this device.'
+        : `Cannot start call: ${permErr.message || 'Permission error'}`;
+      // Show a transient error state (no call modal, just a brief error indicator)
+      setCallState({ status: 'error', type: callType, userId: targetUserId, username: targetUsername, errorMsg });
+      setTimeout(() => setCallState(null), 5000);
+      return; // Abort — do NOT open call UI
+    }
+    // ────────────────────────────────────────────────────────────
 
-      // Set call timeout — auto-cancel if no answer
-      clearCallTimeout();
-      callTimeoutRef.current = setTimeout(() => {
-        const cs = callStateRef.current;
-        if (cs && (cs.status === 'ringing' || cs.status === 'connecting')) {
-          console.info('[WebRTC] Call timeout — no answer');
-          stopRingtone();
-          wsSend({ type: 'call_end', target_user_id: targetUserId });
-          cleanup();
-          playCallEnded();
-        }
-      }, CALL_TIMEOUT_MS);
+    // Show ringing state — permissions are granted at this point
+    setCallState({ status: 'ringing', type: callType, userId: targetUserId, username: targetUsername });
+    startRingtone();
 
+    // Set call timeout — auto-cancel if no answer
+    clearCallTimeout();
+    callTimeoutRef.current = setTimeout(() => {
+      const cs = callStateRef.current;
+      if (cs && (cs.status === 'ringing' || cs.status === 'connecting')) {
+        console.info('[WebRTC] Call timeout — no answer');
+        stopRingtone();
+        wsSend({ type: 'call_end', target_user_id: targetUserId });
+        cleanup();
+        playCallEnded();
+      }
+    }, CALL_TIMEOUT_MS);
+
+    try {
       const stream = await getLocalStream(callType);
       const pc     = createPC(targetUserId);
 
@@ -641,7 +678,19 @@ export function useWebRTC(currentUser, _token, ws) {
       console.error('[WebRTC] initiateCall error:', err);
       stopRingtone();
       clearCallTimeout();
-      cleanup();
+      // Show error state instead of silently closing — this way the user
+      // can see WHY the call failed (e.g., camera permission denied)
+      const errorMsg = err.name === 'NotAllowedError'
+        ? 'Camera/microphone access denied. Please allow permissions and try again.'
+        : err.name === 'NotFoundError'
+        ? 'No camera or microphone found on this device.'
+        : `Call failed: ${err.message || 'Unknown error'}`;
+      setCallState(prev => prev ? { ...prev, status: 'error', errorMsg } : null);
+      // Auto-dismiss error state after 4s
+      setTimeout(() => {
+        setCallState(prev => prev?.status === 'error' ? null : prev);
+        cleanup();
+      }, 4000);
     }
   }, [getLocalStream, createPC, setupDataChannel, wsSend, cleanup, clearCallTimeout]);
 
@@ -772,6 +821,11 @@ export function useWebRTC(currentUser, _token, ws) {
       setIsScreenSharing(false);
     } else {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          alert('Screen sharing is not supported on this device/browser.');
+          return;
+        }
+
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { frameRate: 30, cursor: 'always' },
           audio: false,
@@ -783,7 +837,25 @@ export function useWebRTC(currentUser, _token, ws) {
         if (sender) {
           await sender.replaceTrack(screenTrack);
         } else {
+          // If audio-only call originally, add track and manually trigger renegotiation
           pc.addTrack(screenTrack, localStreamRef.current || new MediaStream());
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            const cs = callStateRef.current;
+            wsSend({
+              type: 'call_offer',
+              target_user_id: cs?.userId,
+              sdp: pc.localDescription,
+              call_type: 'video',
+              from_username: currentUserRef.current?.username,
+              is_restart: true, // Reuse the ICE restart handler on remote
+            });
+            // Update UI to video
+            setCallState(prev => prev ? { ...prev, type: 'video' } : prev);
+          } catch(e) {
+            console.warn('[WebRTC] Renegotiation for screenshare failed:', e);
+          }
         }
 
         screenTrack.onended = () => {
@@ -800,9 +872,12 @@ export function useWebRTC(currentUser, _token, ws) {
         setIsScreenSharing(true);
       } catch (err) {
         console.warn('[WebRTC] Screen share cancelled/failed:', err);
+        if (err.name !== 'NotAllowedError') {
+          alert('Screen sharing failed or is unsupported on this device.');
+        }
       }
     }
-  }, [isScreenSharing]);
+  }, [isScreenSharing, wsSend]);
 
   // ─── Device switching ──────────────────────────────────────
 
@@ -947,7 +1022,7 @@ export function useWebRTC(currentUser, _token, ws) {
     }
 
     // ── Call accepted (caller gets answer) ────────────────────
-    if (type === 'call_accepted') {
+    if (type === 'call_accepted' || type === 'call_answer') {
       stopRingtone();
       clearCallTimeout();
       const pc = pcRef.current;

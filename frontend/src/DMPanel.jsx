@@ -284,19 +284,61 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
   const chatEnd = useRef(null);
   const chatContainer = useRef(null);
   const typingTimeout = useRef(null);
+  const isAtBottom = useRef(true); // Track if user is scrolled to bottom
+  const prevScrollHeight = useRef(0); // For preserving scroll when loading older msgs
 
   // Seen-message dedup guard (prevents doubles from WS + history overlap)
   const seenIds = useRef(new Set());
+  const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Load initial DM history — do NOT clear messages first (avoids blank flash)
+  // ── REST fallback for DM history ──────────────────────────────
+  const fetchHistoryViaREST = useCallback(async (targetId, currentUserId) => {
+    if (!targetId || !currentUserId) return;
+    try {
+      setHistoryLoading(true);
+      const res = await fetch(
+        `${API}/api/dm/history?user_id=${currentUserId}&target_id=${targetId}&limit=50`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const incoming = json.messages || [];
+      const newSeen = new Set(incoming.map(m => m.id));
+      seenIds.current = newSeen;
+      setMessages(incoming);
+      setHasMore(json.has_more || false);
+    } catch (err) {
+      console.warn('[DM] REST history fallback failed:', err.message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  // Load initial DM history — dual strategy: WS first, REST fallback
   useEffect(() => {
-    if (ws?.readyState === 1 && targetUser) {
-      // Reset the seen-set for the new conversation but keep old messages
-      // visible until new history arrives (zero blank flash)
-      seenIds.current = new Set();
+    if (!targetUser) return;
+    seenIds.current = new Set();
+    // Reset scroll tracking — new conversation should always start at the bottom
+    isAtBottom.current = true;
+    setMessages([]); // Clear stale messages immediately to prevent old chat flash
+
+    if (ws?.readyState === 1) {
+      // WS is open — request via WebSocket (server will push dm_history event)
       ws.send(JSON.stringify({ type: 'get_dm_history', target_user_id: targetUser.id, limit: 50 }));
       ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id }));
+    } else {
+      // WS not ready — load history immediately via REST so panel is never blank
+      fetchHistoryViaREST(targetUser.id, currentUser?.id);
     }
+
+    // Also retry via WS after 1.5s in case socket was still connecting
+    const retryTimer = setTimeout(() => {
+      if (ws?.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'get_dm_history', target_user_id: targetUser.id, limit: 50 }));
+      }
+    }, 1500);
+
+    return () => clearTimeout(retryTimer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetUser?.id, ws]);
 
   // Listen for DM events
@@ -378,24 +420,43 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws, targetUser?.id, currentUser?.id]);
 
-  // Auto-scroll on new messages
+  // Smart auto-scroll: only scroll to bottom if user is already near bottom
   useEffect(() => {
-    chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const el = chatContainer.current;
+    if (!el) return;
 
-  // Infinite scroll — load older on scroll to top
+    if (loadingMore) {
+      // After loading older messages, restore scroll position to prevent jump
+      const newScrollHeight = el.scrollHeight;
+      el.scrollTop = newScrollHeight - prevScrollHeight.current;
+    } else if (isAtBottom.current) {
+      // Only auto-scroll if user was at (or near) the bottom
+      chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, loadingMore]);
+
+  // Infinite scroll — load older on scroll to top + track if user is at bottom
   const handleScroll = () => {
     const el = chatContainer.current;
-    if (!el || loadingMore || !hasMore) return;
-    if (el.scrollTop < 80 && messages.length > 0) {
+    if (!el) return;
+
+    // Track whether user is near the bottom (within 80px)
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isAtBottom.current = distanceFromBottom < 80;
+
+    // Load older messages when scrolled near the top
+    if (!loadingMore && hasMore && el.scrollTop < 80 && messages.length > 0) {
+      prevScrollHeight.current = el.scrollHeight; // Save before loading
       setLoadingMore(true);
       const oldestId = messages[0]?.id;
-      ws.send(JSON.stringify({
-        type: 'get_dm_history',
-        target_user_id: targetUser.id,
-        before_id: oldestId,
-        limit: 50,
-      }));
+      if (ws?.readyState === 1) {
+        ws.send(JSON.stringify({
+          type: 'get_dm_history',
+          target_user_id: targetUser.id,
+          before_id: oldestId,
+          limit: 50,
+        }));
+      }
     }
   };
 
@@ -526,13 +587,17 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 400, opacity: 0 }}
       transition={{ type: 'spring', damping: 25 }}
-      className="fixed right-0 top-0 bottom-0 z-50 flex flex-col"
+      className="fixed right-0 top-0 z-50"
       style={{
         width: 'min(384px, 100vw)',
+        height: '100dvh',
         background: 'rgba(14,14,34,0.98)',
         borderLeft: '1px solid rgba(0,240,255,0.1)',
         backdropFilter: 'blur(30px)',
         boxShadow: '-10px 0 40px rgba(0,0,0,0.5)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
       {/* Header */}
@@ -612,8 +677,14 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
       <div
         ref={chatContainer}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-3"
-        style={{ scrollBehavior: 'smooth' }}
+        className="flex-1 p-4 space-y-3"
+        style={{
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          minHeight: 0,
+          scrollBehavior: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}
       >
         {/* Loading more indicator */}
         {loadingMore && (
@@ -674,7 +745,7 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
                     {isDeleted ? (
                       <p className="text-[10px] italic" style={{ color: 'rgba(255,255,255,0.25)' }}>🗑️ Message deleted</p>
                     ) : (
-                      <p className="text-xs leading-relaxed" style={{ color: isOwn ? '#fff' : 'var(--text-1)' }}>{msg.content}</p>
+                      <p className="text-xs leading-relaxed" style={{ color: isOwn ? '#fff' : 'var(--text-1)', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
                     )}
                     <div className="flex items-center justify-between mt-1 gap-2">
                       <p className="text-[8px]" style={{ color: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--text-3)' }}>
@@ -801,20 +872,33 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
       </AnimatePresence>
 
       {/* Input */}
-      <div className="p-3 border-t flex gap-2 items-center" style={{ borderColor: 'var(--border)', background: 'var(--bg-raised)' }}>
+      <div className="p-3 border-t flex gap-2 items-end flex-shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--bg-raised)', paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
         {isConnected ? (
           <>
             {/* File upload */}
             <FileUpload onSend={sendFile} />
 
             {/* Text input */}
-            <input
+            <textarea
               value={input}
               onChange={handleInputChange}
-              onKeyDown={e => e.key === 'Enter' && sendDM()}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (input.trim()) sendDM();
+                }
+              }}
               placeholder={`Message ${targetUser.username}...`}
-              className="flex-1 px-3 py-2 rounded-xl text-xs outline-none transition-all"
-              style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+              rows={1}
+              className="flex-1 px-3 py-2 rounded-xl text-xs outline-none transition-all resize-none"
+              style={{
+                background: 'var(--bg-hover)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-1)',
+                maxHeight: '100px',
+                overflowY: 'auto',
+                lineHeight: '1.4',
+              }}
             />
 
             {/* Voice */}
@@ -883,9 +967,10 @@ export const AIChatPanel = ({ ws, onClose }) => {
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 400, opacity: 0 }}
       transition={{ type: 'spring', damping: 25 }}
-      className="fixed right-0 top-0 bottom-0 z-50 flex flex-col"
+      className="fixed right-0 top-0 z-50 flex flex-col"
       style={{
         width: 'min(384px, 100vw)',
+        height: '100dvh',
         background: 'rgba(14,14,34,0.98)',
         borderLeft: '1px solid rgba(179,71,234,0.15)',
         backdropFilter: 'blur(30px)',
@@ -938,11 +1023,16 @@ export const AIChatPanel = ({ ws, onClose }) => {
         <div ref={chatEnd} />
       </div>
 
-      <div className="p-3 border-t border-white/[0.06] flex gap-2">
+      <div className="p-3 border-t flex gap-2" style={{ borderColor: 'rgba(255,255,255,0.06)', paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendMessage()}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
+          }}
           placeholder="Ask AI anything..."
           className="flex-1 px-3 py-2 rounded-xl text-xs text-white/70 font-poppins outline-none"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}

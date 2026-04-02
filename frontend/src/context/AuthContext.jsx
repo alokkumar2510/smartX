@@ -132,7 +132,7 @@ export function AuthProvider({ children }) {
       try {
         const { data: { session: s } } = await Promise.race([
           supabase.auth.getSession(),
-          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000)),
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 10000)),
         ]);
         if (mountedRef.current && s && !isExpired(s)) {
           await applySession(s);
@@ -142,10 +142,9 @@ export function AuthProvider({ children }) {
         }
       } catch (e) {
         console.warn('[Auth] Bootstrap:', e.message);
-        if (e.message === 'timeout') {
-          try { window.localStorage.removeItem('smartchat_supabase_auth'); } catch {}
-          supabase.auth.signOut().catch(() => {});
-        }
+        // On timeout: do NOT clear localStorage — it may still have a valid session.
+        // onAuthStateChange will fire once Supabase resolves and apply the session.
+        // Aggressively clearing on timeout was causing unnecessary logouts.
       } finally {
         if (mountedRef.current) setLoading(false);
       }

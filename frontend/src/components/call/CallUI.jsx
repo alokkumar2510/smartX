@@ -262,6 +262,19 @@ function VideoTile({ stream, label, muted = false, pip = false, noVideo = false 
   );
 }
 
+/* ── Audio Player (for voice calls) ──────────────────────────── */
+function AudioPlayer({ stream }) {
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.srcObject = stream || null;
+    }
+  }, [stream]);
+
+  return <audio ref={audioRef} autoPlay playsInline />;
+}
+
 /* ══════════════════════════════════════════════════════════════
    Main CallUI Component
 ══════════════════════════════════════════════════════════════ */
@@ -320,6 +333,39 @@ export default function CallUI({
   // Don't show full CallUI for 'incoming' status — that's handled by IncomingCallPopup
   if (callState.status === 'incoming') return null;
 
+  // Error state — show a toast-like overlay then auto-dismiss
+  if (callState.status === 'error') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)',
+      }}>
+        <div style={{
+          background: '#1e1e2e', border: '1px solid rgba(248,113,113,0.4)',
+          borderRadius: 20, padding: '32px 40px', maxWidth: 420, textAlign: 'center',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.7)',
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+          <h3 style={{ color: '#f87171', fontWeight: 700, marginBottom: 12, fontSize: 18 }}>Call Failed</h3>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+            {callState.errorMsg || 'An unexpected error occurred.'}
+          </p>
+          <button
+            onClick={onEnd}
+            style={{
+              padding: '10px 28px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg,#ef4444,#b91c1c)', color: '#fff',
+              fontWeight: 600, fontSize: 14,
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.root}>
       {/* ── Main video area ─────────────────────────────────── */}
@@ -352,6 +398,8 @@ export default function CallUI({
             {isActive && (
               <p style={styles.voiceEncrypted}>Voice Call · P2P Encrypted</p>
             )}
+            {/* Play remote audio for voice calls */}
+            {remoteStream && <AudioPlayer stream={remoteStream} />}
           </div>
         )}
 
