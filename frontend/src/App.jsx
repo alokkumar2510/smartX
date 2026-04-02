@@ -32,6 +32,7 @@ import IncomingCallPopup from './components/call/IncomingCallPopup';
 import CallUI from './components/call/CallUI';
 import VoiceRecorder, { VoicePlayer } from './components/VoiceRecorder';
 import FileUpload, { FileMessage } from './components/FileShare';
+import ImageEditor from './components/ImageEditor';
 
 // DM & AI panels (drawer versions kept for AI chat)
 import { AIChatPanel } from './DMPanel';
@@ -65,6 +66,13 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
   const chatContainer = useRef(null);
   const typingTimeout = useRef(null);
   const sentTyping    = useRef(false);
+
+  // ── Image editor state ──────────────────────────────────
+  const [editingImage, setEditingImage] = useState(null);  // File to edit
+  const [lightboxUrl, setLightboxUrl]   = useState(null);  // Lightbox image
+  const [isDragOver, setIsDragOver]     = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);  // null | 0-100
+  const imageInputRef = useRef(null);
 
   const isBlocked = blocks?.some(b =>
     (b.blocker_id === currentUser?.id && b.blocked_id === targetUser?.id) ||
@@ -222,11 +230,56 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
       sentTyping.current = false;
     }
 
-    if (ws?.readyState === 1) ws.send(JSON.stringify(payload));
-    else if (!overridePayload) {
+    if (ws?.readyState === 1) {
+      ws.send(JSON.stringify(payload));
+      // 10s timeout: if dm_sent never arrives, mark failed
+      if (!overridePayload && payload.content) {
+        const optId = `opt_${Date.now()}`;
+        setTimeout(() => {
+          setMessages(prev => prev.map(m =>
+            m._optimistic && m.status === 'sending' ? { ...m, status: 'failed' } : m
+          ));
+        }, 10000);
+      }
+    } else if (!overridePayload) {
       setMessages(prev => prev.map(m => m._optimistic ? { ...m, status: 'failed' } : m));
     }
   };
+
+  // ── Retry failed message ──────────────────────────────
+  const retryMessage = useCallback((msg) => {
+    if (ws?.readyState !== 1) return;
+    // Remove old optimistic
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    // Re-send
+    const payload = {
+      type: 'private_message',
+      target_user_id: targetUser.id,
+      content: msg.content || '',
+      content_type: msg.content_type || 'text',
+      image_url: msg.image_url,
+      voice_url: msg.voice_url,
+      voice_duration: msg.voice_duration,
+      file_url: msg.file_url,
+      file_name: msg.file_name,
+      file_size: msg.file_size,
+    };
+    // Re-create optimistic entry
+    const opt = {
+      _optimistic: true,
+      id: `opt_${Date.now()}`,
+      sender_id: currentUser?.id,
+      sender_username: currentUser?.username,
+      target_user_id: targetUser.id,
+      content: msg.content,
+      content_type: msg.content_type || 'text',
+      image_url: msg.image_url,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, opt]);
+    ws.send(JSON.stringify(payload));
+  }, [ws, targetUser?.id, currentUser?.id, currentUser?.username]);
 
   const sendVoice = ({ url, duration }) => {
     if (!ws || ws.readyState !== 1) return;
@@ -239,17 +292,174 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
     }));
   };
 
-  const sendFile = ({ url, name, size }) => {
+  const sendFile = ({ type, url, name, size }) => {
     if (!ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({
-      type: 'private_message',
-      target_user_id: targetUser.id,
-      content_type: 'file',
-      file_url: url,
-      file_name: name,
-      file_size: size,
-    }));
+    // Detect if it's an image or video by extension
+    const ext = (name || '').split('.').pop().toLowerCase();
+    const imageExts = ['jpg','jpeg','png','gif','webp','bmp','svg'];
+    const videoExts = ['mp4','webm','mov','avi','mkv'];
+
+    if (imageExts.includes(ext)) {
+      ws.send(JSON.stringify({
+        type: 'private_message',
+        target_user_id: targetUser.id,
+        content_type: 'image',
+        image_url: url,
+        content: '🖼️ Image',
+      }));
+      // Add optimistic entry
+      setMessages(prev => [...prev, {
+        _optimistic: true,
+        id: `opt_${Date.now()}`,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        target_user_id: targetUser.id,
+        content_type: 'image',
+        image_url: url,
+        content: '',
+        status: 'sending',
+        created_at: new Date().toISOString(),
+      }]);
+    } else if (videoExts.includes(ext)) {
+      ws.send(JSON.stringify({
+        type: 'private_message',
+        target_user_id: targetUser.id,
+        content_type: 'video',
+        file_url: url,
+        file_name: name,
+        file_size: size,
+      }));
+      setMessages(prev => [...prev, {
+        _optimistic: true,
+        id: `opt_${Date.now()}`,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        target_user_id: targetUser.id,
+        content_type: 'video',
+        file_url: url,
+        file_name: name,
+        content: '',
+        status: 'sending',
+        created_at: new Date().toISOString(),
+      }]);
+    } else {
+      ws.send(JSON.stringify({
+        type: 'private_message',
+        target_user_id: targetUser.id,
+        content_type: 'file',
+        file_url: url,
+        file_name: name,
+        file_size: size,
+      }));
+    }
   };
+
+  // ── Image upload → editor → send pipeline ──────────────
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      // Not an image, send as file
+      handleFileUpload(file);
+      return;
+    }
+    setEditingImage(file);  // Opens image editor
+    e.target.value = '';     // Reset input
+  };
+
+  const handleImageEditorSend = async (editedFile) => {
+    setEditingImage(null);
+    setUploadProgress(0);
+
+    const filename = `images/${Date.now()}_${editedFile.name.replace(/[^a-z0-9.\-_]/gi, '_')}`;
+    // Progress simulation
+    const interval = setInterval(() => {
+      setUploadProgress(p => {
+        if (p === null || p >= 90) { clearInterval(interval); return p; }
+        return p + Math.random() * 18;
+      });
+    }, 150);
+
+    const { error } = await supabase.storage
+      .from('file-attachments')
+      .upload(filename, editedFile, { contentType: editedFile.type, upsert: false });
+
+    clearInterval(interval);
+    if (error) {
+      console.error('Image upload error:', error);
+      setUploadProgress(null);
+      return;
+    }
+
+    setUploadProgress(100);
+    const { data: urlData } = supabase.storage.from('file-attachments').getPublicUrl(filename);
+    setTimeout(() => setUploadProgress(null), 500);
+
+    // Send via WS
+    if (ws?.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'private_message',
+        target_user_id: targetUser.id,
+        content_type: 'image',
+        image_url: urlData.publicUrl,
+        content: '🖼️ Image',
+      }));
+      // Optimistic
+      setMessages(prev => [...prev, {
+        _optimistic: true,
+        id: `opt_${Date.now()}`,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        target_user_id: targetUser.id,
+        content_type: 'image',
+        image_url: urlData.publicUrl,
+        content: '',
+        status: 'sending',
+        created_at: new Date().toISOString(),
+      }]);
+    }
+  };
+
+  const handleFileUpload = async (file) => {
+    if (file.size > 25 * 1024 * 1024) { alert('Max file size is 25MB.'); return; }
+    setUploadProgress(0);
+    const filename = `files/${Date.now()}_${file.name.replace(/[^a-z0-9.\-_]/gi, '_')}`;
+    const interval = setInterval(() => {
+      setUploadProgress(p => {
+        if (p === null || p >= 85) { clearInterval(interval); return p; }
+        return p + Math.random() * 15;
+      });
+    }, 200);
+    const { error } = await supabase.storage
+      .from('file-attachments')
+      .upload(filename, file, { contentType: file.type, upsert: false });
+    clearInterval(interval);
+    if (error) { console.error('Upload error:', error); setUploadProgress(null); return; }
+    setUploadProgress(100);
+    const { data: urlData } = supabase.storage.from('file-attachments').getPublicUrl(filename);
+    setTimeout(() => setUploadProgress(null), 500);
+    sendFile({ type: 'file', url: urlData.publicUrl, name: file.name, size: file.size });
+  };
+
+  // ── Drag & Drop ───────────────────────────────────────
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (file.type.startsWith('image/')) {
+      setEditingImage(file);
+    } else {
+      handleFileUpload(file);
+    }
+  }, []); // eslint-disable-line
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => setIsDragOver(false), []);
 
   const deleteMsg = useCallback((msgId) => {
     if (!ws || ws.readyState !== 1) return;
@@ -289,7 +499,71 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
 
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative">
+    <div className="flex-1 flex flex-col min-h-0 relative"
+         onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+
+      {/* Drag overlay */}
+      <AnimatePresence>
+        {isDragOver && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="absolute inset-0 z-50 flex items-center justify-center"
+            style={{ background: 'rgba(99,102,241,0.12)', backdropFilter: 'blur(4px)', border: '2px dashed rgba(99,102,241,0.5)' }}>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-5xl">📎</span>
+              <p className="text-sm font-bold text-white/80">Drop file to share</p>
+              <p className="text-[10px] text-white/40">Images open editor · Other files upload directly</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Image Editor Modal */}
+      {editingImage && (
+        <ImageEditor
+          file={editingImage}
+          onSend={handleImageEditorSend}
+          onCancel={() => setEditingImage(null)}
+        />
+      )}
+
+      {/* Image Lightbox */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center cursor-pointer"
+            style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(16px)' }}
+            onClick={() => setLightboxUrl(null)}>
+            <img src={lightboxUrl} alt="" className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl" />
+            <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white text-lg flex items-center justify-center transition-all"
+                    onClick={() => setLightboxUrl(null)}>✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Upload progress bar */}
+      <AnimatePresence>
+        {uploadProgress !== null && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            className="px-4 py-2 border-b shrink-0"
+            style={{ borderColor: 'rgba(99,102,241,0.2)', background: 'rgba(99,102,241,0.05)' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">📤</span>
+              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                <motion.div className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', width: `${Math.min(uploadProgress, 100)}%` }}
+                  transition={{ ease: 'easeOut' }} />
+              </div>
+              <span className="text-[10px] font-mono" style={{ color: 'var(--accent)' }}>
+                {uploadProgress >= 100 ? '✓' : `${Math.round(uploadProgress)}%`}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Optional Search Bar ── */}
       <AnimatePresence>
         {searchMode && (
@@ -376,6 +650,7 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
           const isOwn = msg.sender_id === currentUser?.id;
           const ctype = msg.content_type;
           const isDeleted = msg.deleted === 1 || msg.deleted === true;
+          const isFailed = msg.status === 'failed';
           const reactions = msg.reactions
             ? (typeof msg.reactions === 'string' ? JSON.parse(msg.reactions) : msg.reactions)
             : {};
@@ -383,23 +658,99 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
           return (
             <motion.div key={msg.id || i}
               initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
+              animate={{ opacity: isFailed ? 0.7 : 1, y: 0 }}
               className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}
               style={{ marginBottom: hasReactions ? '12px' : undefined }}
             >
+              {/* Voice message */}
               {!isDeleted && ctype === 'voice' ? (
                 <VoicePlayer url={msg.voice_url} isOwn={isOwn} duration={msg.voice_duration} />
               ) : !isDeleted && ctype === 'file' ? (
                 <FileMessage url={msg.file_url} name={msg.file_name} size={msg.file_size} isOwn={isOwn} />
+              ) : !isDeleted && ctype === 'image' ? (
+                /* ── Image Bubble ── */
+                <div className="flex flex-col" style={{ maxWidth: '72%', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                  <div className={`rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} overflow-hidden relative cursor-pointer group`}
+                    style={{
+                      border: isOwn ? 'none' : '1px solid var(--border)',
+                      boxShadow: isOwn ? '0 2px 14px rgba(99,102,241,0.25)' : 'none',
+                    }}
+                    onClick={() => setLightboxUrl(msg.image_url)}>
+                    {/* Sender name */}
+                    {!isOwn && (
+                      <p className="text-[9px] font-semibold px-3 pt-2" style={{ color: 'var(--accent)' }}>
+                        {msg.sender_username}
+                      </p>
+                    )}
+                    <img src={msg.image_url} alt=""
+                      className="max-w-full rounded-lg m-1.5"
+                      style={{ maxHeight: 300, objectFit: 'cover' }}
+                      loading="lazy" />
+                    {/* Hover overlay */}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
+                      <span className="text-white text-2xl opacity-0 group-hover:opacity-100 transition-opacity">🔍</span>
+                    </div>
+                    {/* Time + status on image */}
+                    <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full"
+                         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                      <span className="text-[8px] text-white/70">
+                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                      {isOwn && (
+                        <span className="text-[8px]" style={{ color: msg.status === 'read' ? '#a5f3fc' : msg.status === 'failed' ? '#f87171' : 'rgba(255,255,255,0.6)' }}>
+                          {msg.status === 'failed' ? '✗' : msg.status === 'sending' ? '⟳' : msg.status === 'read' ? '✓✓' : '✓'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Failed retry */}
+                  {isFailed && isOwn && (
+                    <button onClick={() => retryMessage(msg)}
+                      className="text-[10px] font-semibold mt-1 px-2 py-0.5 rounded-lg transition-all hover:bg-red-500/20"
+                      style={{ color: '#f87171', border: '1px solid rgba(248,113,113,0.3)' }}>
+                      ↺ Tap to retry
+                    </button>
+                  )}
+                </div>
+              ) : !isDeleted && ctype === 'video' ? (
+                /* ── Video Bubble ── */
+                <div className="flex flex-col" style={{ maxWidth: '72%', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
+                  <div className={`rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} overflow-hidden p-1.5`}
+                    style={{
+                      background: isOwn ? 'var(--accent)' : 'var(--bg-hover)',
+                      border: isOwn ? 'none' : '1px solid var(--border)',
+                      boxShadow: isOwn ? '0 2px 14px rgba(99,102,241,0.25)' : 'none',
+                    }}>
+                    {!isOwn && (
+                      <p className="text-[9px] font-semibold px-2 pt-1" style={{ color: 'var(--accent)' }}>
+                        {msg.sender_username}
+                      </p>
+                    )}
+                    <video src={msg.file_url} controls preload="metadata"
+                      className="rounded-xl max-w-full"
+                      style={{ maxHeight: 300 }} />
+                    <div className="flex items-center justify-between px-2 pt-1">
+                      <span className="text-[10px]" style={{ color: isOwn ? 'rgba(255,255,255,0.6)' : 'var(--text-3)' }}>
+                        🎬 {msg.file_name || 'Video'}
+                      </span>
+                      <span className="text-[8px]" style={{ color: isOwn ? 'rgba(255,255,255,0.45)' : 'var(--text-3)' }}>
+                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ) : (
+                /* ── Text / Default Bubble ── */
                 <div className="flex flex-col" style={{ maxWidth: '72%', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
                   <div
-                    className={`px-3.5 py-2.5 rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} relative`}
+                    className={`px-3.5 py-2.5 rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} relative ${isFailed ? 'cursor-pointer' : ''}`}
                     style={{
                       background: isDeleted ? 'rgba(255,255,255,0.03)' : isOwn ? 'var(--accent)' : 'var(--bg-hover)',
-                      border: isDeleted ? '1px dashed rgba(255,255,255,0.08)' : isOwn ? 'none' : '1px solid var(--border)',
-                      boxShadow: isOwn && !isDeleted ? '0 2px 14px rgba(99,102,241,0.25)' : 'none',
+                      border: isDeleted ? '1px dashed rgba(255,255,255,0.08)' : isFailed ? '1px solid rgba(248,113,113,0.3)' : isOwn ? 'none' : '1px solid var(--border)',
+                      boxShadow: isOwn && !isDeleted && !isFailed ? '0 2px 14px rgba(99,102,241,0.25)' : 'none',
                     }}
+                    onClick={isFailed && isOwn ? () => retryMessage(msg) : undefined}
+                    title={isFailed ? 'Tap to retry' : undefined}
                   >
                     {/* Reply quote */}
                     {msg.reply_to && !isDeleted && (
@@ -419,21 +770,28 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
                       </p>
                     )}
 
-                    {/* Image */}
-                    {msg.image_url && !isDeleted && (
+                    {/* Legacy image_url for older text messages */}
+                    {msg.image_url && !isDeleted && ctype !== 'image' && (
                       <img src={msg.image_url} alt=""
                         className="rounded-xl mb-1.5 max-w-full cursor-pointer"
                         style={{ maxHeight: 280 }}
-                        onClick={() => window.open(msg.image_url, '_blank')} />
+                        onClick={(e) => { e.stopPropagation(); setLightboxUrl(msg.image_url); }} />
                     )}
 
                     {/* Text or tombstone */}
                     {isDeleted ? (
                       <p className="text-[10px] italic" style={{ color: 'rgba(255,255,255,0.2)' }}>🗑️ Message deleted</p>
-                    ) : msg.content && (
+                    ) : msg.content && ctype !== 'image' && (
                       <p className="text-xs leading-relaxed whitespace-pre-wrap"
                          style={{ color: isOwn ? '#fff' : 'var(--text-1)' }}>
                         {msg.content}
+                      </p>
+                    )}
+
+                    {/* Failed indicator */}
+                    {isFailed && isOwn && (
+                      <p className="text-[9px] mt-1 flex items-center gap-1" style={{ color: '#f87171' }}>
+                        ⚠ Failed · Tap to retry
                       </p>
                     )}
 
@@ -460,7 +818,7 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
                               : '✓'}
                           </span>
                         )}
-                        {!isDeleted && (
+                        {!isDeleted && !isFailed && (
                           <>
                             <button onClick={() => setReplyTo(msg)}
                               className="text-[9px] opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
@@ -591,6 +949,19 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
           </p>
         ) : (
           <>
+            {/* Image upload button */}
+            <input ref={imageInputRef} type="file" className="hidden"
+              accept="image/*,video/*" onChange={handleImageSelect} />
+            <motion.button
+              whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.85 }}
+              onClick={() => imageInputRef.current?.click()}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 transition-all"
+              style={{ color: 'var(--text-3)', background: 'var(--bg-hover)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#34d399'; e.currentTarget.style.background = 'rgba(52,211,153,0.1)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
+              title="Send image or video">
+              🖼️
+            </motion.button>
             <FileUpload onSend={sendFile} />
             <input
               value={input}
@@ -832,11 +1203,13 @@ const ChatDashboard = () => {
   const {
     callState, localStream, remoteStreams,
     isMuted, isCameraOff, isScreenSharing,
+    isSpeakerOn,
     initiateCall, acceptCall, rejectCall, endCall,
     toggleMic, toggleCamera, toggleScreenShare,
+    toggleSpeaker,
     // P2P extras
     connectionQuality, dataMessages, sendDataMessage,
-    availableDevices, switchCamera, switchMicrophone,
+    availableDevices, switchCamera, switchMicrophone, switchSpeaker,
   } = useWebRTC(user, token, wsSocket);
 
   // ── Load all users ───────────────────────────────────────
@@ -1360,9 +1733,11 @@ const ChatDashboard = () => {
         isMuted={isMuted}
         isCameraOff={isCameraOff}
         isScreenSharing={isScreenSharing}
+        isSpeakerOn={isSpeakerOn}
         onToggleMic={toggleMic}
         onToggleCamera={toggleCamera}
         onToggleScreenShare={toggleScreenShare}
+        onToggleSpeaker={toggleSpeaker}
         onEnd={endCall}
         username={callState?.username}
         currentUsername={user?.username}
@@ -1372,6 +1747,7 @@ const ChatDashboard = () => {
         availableDevices={availableDevices}
         onSwitchCamera={switchCamera}
         onSwitchMicrophone={switchMicrophone}
+        onSwitchSpeaker={switchSpeaker}
       />
     </div>
   );

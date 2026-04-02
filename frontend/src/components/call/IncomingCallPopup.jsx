@@ -2,14 +2,19 @@
  * ════════════════════════════════════════════════════════
  *  IncomingCallPopup.jsx — Full-screen incoming call alert
  *
- *  Shown when 'incoming_call' is received from the
- *  WebSocket signaling relay. Displays caller info,
- *  animated avatar ring, and Accept/Reject buttons.
- *  Connection is pure P2P WebRTC — no media server.
+ *  Features:
+ *   ✦ Beautiful glassmorphic card with pulsing rings
+ *   ✦ 45-second auto-reject timer (visual countdown)
+ *   ✦ Vibration pattern for mobile devices
+ *   ✦ Accept/Reject with spring animations
+ *   ✦ End-to-end encrypted badge
+ *   ✦ Caller avatar with animated glow
  * ════════════════════════════════════════════════════════
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const AUTO_REJECT_SECONDS = 45;
 
 /** Format seconds as MM:SS */
 function formatTime(s) {
@@ -20,14 +25,59 @@ function formatTime(s) {
 
 export default function IncomingCallPopup({ callState, onAccept, onReject }) {
   const [elapsed, setElapsed] = useState(0);
+  const vibrationRef = useRef(null);
 
+  // Elapsed timer + auto-reject
   useEffect(() => {
-    if (!callState || callState.status !== 'incoming') return;
-    const t = setInterval(() => setElapsed(e => e + 1), 1000);
+    if (!callState || callState.status !== 'incoming') {
+      setElapsed(0);
+      return;
+    }
+
+    setElapsed(0); // Reset on new incoming call
+
+    const t = setInterval(() => {
+      setElapsed(e => {
+        const next = e + 1;
+        if (next >= AUTO_REJECT_SECONDS) {
+          clearInterval(t);
+          onReject?.();
+        }
+        return next;
+      });
+    }, 1000);
+
     return () => clearInterval(t);
-  }, [callState?.status]);
+  }, [callState?.status, callState?.userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Vibration pattern for mobile
+  useEffect(() => {
+    if (!callState || callState.status !== 'incoming') {
+      if (vibrationRef.current) {
+        clearInterval(vibrationRef.current);
+        vibrationRef.current = null;
+      }
+      try { navigator.vibrate?.(0); } catch (_) {} // Cancel vibration
+      return;
+    }
+
+    // Start vibrating
+    const vibrate = () => {
+      try { navigator.vibrate?.([200, 100, 200, 100, 200]); } catch (_) {}
+    };
+    vibrate();
+    vibrationRef.current = setInterval(vibrate, 2000);
+
+    return () => {
+      clearInterval(vibrationRef.current);
+      vibrationRef.current = null;
+      try { navigator.vibrate?.(0); } catch (_) {}
+    };
+  }, [callState?.status, callState?.userId]);
 
   const isVideo = callState?.type === 'video';
+  const remaining = AUTO_REJECT_SECONDS - elapsed;
+  const progress  = elapsed / AUTO_REJECT_SECONDS; // 0 → 1
 
   return (
     <AnimatePresence>
@@ -68,14 +118,15 @@ export default function IncomingCallPopup({ callState, onAccept, onReject }) {
 
               {/* Avatar */}
               <div
-                className="w-24 h-24 rounded-full flex items-center justify-center text-5xl relative z-10"
+                className="w-24 h-24 rounded-full flex items-center justify-center text-4xl font-bold relative z-10"
                 style={{
-                  background: 'rgba(0,240,255,0.06)',
+                  background: 'linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3))',
                   border: '2px solid rgba(0,240,255,0.3)',
                   boxShadow: '0 0 40px rgba(0,240,255,0.2)',
+                  color: '#fff',
                 }}
               >
-                {isVideo ? '📹' : '📞'}
+                {callState.username?.charAt(0)?.toUpperCase() || (isVideo ? '📹' : '📞')}
               </div>
             </div>
 
@@ -98,6 +149,34 @@ export default function IncomingCallPopup({ callState, onAccept, onReject }) {
               <p className="text-sm mt-1 font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
                 {formatTime(elapsed)}
               </p>
+            </div>
+
+            {/* Auto-reject countdown */}
+            <div className="w-full px-4">
+              <div style={{
+                height: 3,
+                borderRadius: 2,
+                background: 'rgba(255,255,255,0.1)',
+                overflow: 'hidden',
+              }}>
+                <motion.div
+                  style={{
+                    height: '100%',
+                    background: remaining <= 10
+                      ? 'linear-gradient(90deg, #ef4444, #f97316)'
+                      : 'linear-gradient(90deg, #6366f1, #06b6d4)',
+                    borderRadius: 2,
+                  }}
+                  animate={{ width: `${(1 - progress) * 100}%` }}
+                  transition={{ duration: 1, ease: 'linear' }}
+                />
+              </div>
+              {remaining <= 15 && (
+                <p className="text-[10px] text-center mt-1 font-mono"
+                   style={{ color: remaining <= 10 ? 'rgba(239,68,68,0.7)' : 'rgba(255,255,255,0.3)' }}>
+                  Auto-declining in {remaining}s
+                </p>
+              )}
             </div>
 
             {/* Action buttons */}
