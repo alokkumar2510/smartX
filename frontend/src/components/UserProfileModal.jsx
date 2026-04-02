@@ -80,6 +80,12 @@ export default function UserProfileModal({ currentUser, onClose, onProfileUpdate
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (!currentUser?.supabase_id) {
+      setMsg({ type: 'err', text: 'Session not ready — please reload.' });
+      return;
+    }
+
     setUploading(true);
     setMsg(null);
     try {
@@ -91,12 +97,15 @@ export default function UserProfileModal({ currentUser, onClose, onProfileUpdate
       if (error) throw error;
 
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      // Bust cache
       const urlWithTs = `${publicUrl}?t=${Date.now()}`;
+      // Auto-save to DB (don't wait for "Save Profile" click)
+      await supabase.from('users').update({ avatar_url: urlWithTs }).eq('supabase_id', currentUser.supabase_id);
       setProfile(p => ({ ...p, avatar_url: urlWithTs }));
-      setMsg({ type: 'ok', text: 'Avatar uploaded!' });
+      onProfileUpdate?.({ ...currentUser, avatar_url: urlWithTs });
+      setMsg({ type: 'ok', text: '✅ Avatar uploaded!' });
     } catch (err) {
-      setMsg({ type: 'err', text: `Upload failed: ${err.message}` });
+      console.error('Avatar upload:', err);
+      setMsg({ type: 'err', text: `Upload failed: ${err?.message || 'Check storage bucket permissions'}` });
     } finally {
       setUploading(false);
     }
@@ -106,7 +115,9 @@ export default function UserProfileModal({ currentUser, onClose, onProfileUpdate
     setUploading(true);
     try {
       await supabase.storage.from('avatars').remove([`${currentUser.supabase_id}/avatar.webp`]);
+      await supabase.from('users').update({ avatar_url: null }).eq('supabase_id', currentUser.supabase_id);
       setProfile(p => ({ ...p, avatar_url: null }));
+      onProfileUpdate?.({ ...currentUser, avatar_url: null });
       setMsg({ type: 'ok', text: 'Avatar removed.' });
     } catch (err) {
       setMsg({ type: 'err', text: err.message });

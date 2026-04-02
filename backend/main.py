@@ -142,11 +142,24 @@ async def startup():
                 db.commit()
             except Exception:
                 pass  # Column already exists
+        # ── Performance indexes for DM queries ───────────────────
+        try:
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dm_chat
+                ON direct_messages (sender_id, target_user_id, id DESC)
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dm_target
+                ON direct_messages (target_user_id, id DESC)
+            """)
+            db.commit()
+        except Exception:
+            pass
         db.close()
     except Exception as e:
         logger.warning(f"DM table creation/migration: {e}")
     logger.info("═" * 55)
-    logger.info("  ⚡ SmartChat X Backend v4.0 — ONLINE")
+    logger.info("  ⚡ SmartChat X Backend v5.0 — ONLINE")
     logger.info("  REST API:  http://127.0.0.1:8000")
     logger.info("  WebSocket: ws://127.0.0.1:8000/ws/{token}")
     logger.info("  TCP Bridge → port 9000 | UDP → port 9001")
@@ -947,7 +960,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         "file_size": file_size,
                         "reply_to": reply_to,
                         "status": "sent",
-                        "created_at": datetime.utcnow().isoformat(),
+                        # Always send ISO-8601 with Z suffix so browsers parse as UTC
+                        "created_at": datetime.utcnow().isoformat() + "Z",
                     }
                     # Deliver to target — promote to 'delivered' if online
                     sent_ok = await manager.send_to(target_id, json.dumps(dm_data))

@@ -78,11 +78,14 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
     (c.sender_id === targetUser?.id || c.receiver_id === targetUser?.id)
   );
 
-  // Load history whenever target changes
+  // Seen-message dedup guard
+  const seenIds = useRef(new Set());
+
+  // Load history whenever target changes (don't erase while loading = no flash)
   useEffect(() => {
-    setMessages([]);
     setHasMore(false);
     if (ws?.readyState === 1 && targetUser?.id) {
+      seenIds.current = new Set();
       ws.send(JSON.stringify({ type: 'get_dm_history', target_user_id: targetUser.id, limit: 50 }));
       ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id }));
     }
@@ -95,19 +98,41 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
       try {
         const data = JSON.parse(e.data);
         if (data.type === 'dm_history' && data.target_user_id === targetUser?.id) {
+          const incoming = data.messages || [];
+          const newSeen = new Set(incoming.map(m => m.id));
           setMessages(prev => {
-            if (!prev.length || !data.messages?.[0]?.id) return data.messages || [];
-            const ids = new Set(prev.map(m => m.id));
-            return [...(data.messages || []).filter(m => !ids.has(m.id)), ...prev];
+            if (prev.length > 0 && data.messages?.[0]?.id) {
+              // Infinite scroll prepend
+              const newMsgs = incoming.filter(m => !prev.some(p => p.id === m.id));
+              newMsgs.forEach(m => newSeen.add(m.id));
+              prev.forEach(m => newSeen.add(m.id));
+              seenIds.current = newSeen;
+              return [...newMsgs, ...prev.filter(m => !m._optimistic)];
+            }
+            seenIds.current = newSeen;
+            return incoming;
           });
           setHasMore(data.has_more || false);
           setLoadingMore(false);
+        } else if (data.type === 'dm_sent' && data.target_user_id === targetUser?.id) {
+          if (seenIds.current.has(data.id)) return;
+          seenIds.current.add(data.id);
+          setMessages(prev => {
+            const idx = [...prev].reverse().findIndex(m => m._optimistic);
+            if (idx !== -1) {
+              const realIdx = prev.length - 1 - idx;
+              const updated = [...prev];
+              updated[realIdx] = { ...data, _optimistic: false };
+              return updated;
+            }
+            return [...prev, data];
+          });
         } else if (data.type === 'private_message' && data.sender_id === targetUser?.id) {
+          if (seenIds.current.has(data.id)) return;
+          seenIds.current.add(data.id);
           setMessages(prev => [...prev, data]);
           playDMSound();
           ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id, message_ids: [data.id] }));
-        } else if (data.type === 'dm_sent' && data.target_user_id === targetUser?.id) {
-          setMessages(prev => [...prev, data]);
         } else if (data.type === 'messages_read' && data.reader_id === targetUser?.id) {
           setMessages(prev => prev.map(m =>
             m.sender_id === currentUser?.id ? { ...m, status: 'read' } : m
@@ -176,8 +201,31 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
       ...(replyTo ? { reply_to: replyTo } : {}),
     } : null);
     if (!payload) return;
+
+    // Optimistic UI — add immediately
+    if (!overridePayload && payload.content) {
+      const opt = {
+        _optimistic: true,
+        id: `opt_${Date.now()}`,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        target_user_id: targetUser.id,
+        content: payload.content,
+        content_type: 'text',
+        status: 'sending',
+        created_at: new Date().toISOString(),
+        reply_to: replyTo || null,
+      };
+      setMessages(prev => [...prev, opt]);
+      setInput('');
+      setReplyTo(null);
+      sentTyping.current = false;
+    }
+
     if (ws?.readyState === 1) ws.send(JSON.stringify(payload));
-    if (!overridePayload) { setInput(''); setReplyTo(null); }
+    else if (!overridePayload) {
+      setMessages(prev => prev.map(m => m._optimistic ? { ...m, status: 'failed' } : m));
+    }
   };
 
   const sendVoice = ({ url, duration }) => {
@@ -399,9 +447,17 @@ const DMPanelBody = ({ targetUser, currentUser, connections, blocks, ws }) => {
                       </p>
                       <div className="flex items-center gap-1">
                         {isOwn && !isDeleted && (
-                          <span className="text-[8px]"
-                                style={{ color: msg.status === 'read' ? '#a5f3fc' : 'rgba(255,255,255,0.4)' }}>
-                            {msg.status === 'read' ? '✓✓' : '✓'}
+                          <span className="text-[8px]" style={{
+                            color: msg.status === 'read' ? '#a5f3fc'
+                              : msg.status === 'sending' ? 'rgba(255,255,255,0.25)'
+                              : msg.status === 'failed' ? '#f87171'
+                              : 'rgba(255,255,255,0.4)',
+                          }}>
+                            {msg.status === 'failed' ? '✗'
+                              : msg.status === 'sending' ? '⟳'
+                              : msg.status === 'read' ? '✓✓'
+                              : msg.status === 'delivered' ? '✓✓'
+                              : '✓'}
                           </span>
                         )}
                         {!isDeleted && (
@@ -937,26 +993,20 @@ const ChatDashboard = () => {
             break;
           }
           case 'incoming_call': {
+            // Block check only — useWebRTC handles all call signaling state
             const blks = blocksRef.current;
             const blocked = blks.some(b =>
               (b.blocker_id === user?.id && b.blocked_id === data.from_user_id) ||
               (b.blocked_id === user?.id && b.blocker_id === data.from_user_id)
             );
             if (blocked) {
-              socket.send(JSON.stringify({ type: 'call_rejected', target_user_id: data.from_user_id }));
-              break;
+              socket.send(JSON.stringify({ type: 'call_reject', target_user_id: data.from_user_id }));
             }
-            startRingtone();
-            showNotification(`📞 ${data.from_username}`, `${data.call_type === 'video' ? 'Video' : 'Voice'} call`);
+            // Do NOT handle ringtone or notification here — useWebRTC does it
             break;
           }
-          case 'call_accepted':
-            stopRingtone(); playCallConnected();
-            break;
-          case 'call_rejected':
-          case 'call_ended':
-            stopRingtone(); playCallEnded();
-            break;
+          // call_accepted / call_rejected / call_ended — handled entirely inside useWebRTC
+          // Do NOT duplicate handling here (would cause double sound + race conditions)
           default:
             break;
         }
@@ -965,7 +1015,10 @@ const ChatDashboard = () => {
 
     socket.onclose = (event) => {
       clearInterval(socket._statsInterval);
-      setWsSocket(null);             // clear stale socket from children
+      // ⚠️ IMPORTANT: Do NOT call setWsSocket(null) here.
+      // Setting wsSocket=null propagates into useWebRTC which would
+      // destroy the RTCPeerConnection mid-call, closing the call window.
+      // The new socket will be set via setWsSocket() in onopen instead.
       requestBackgroundSync();
       if (event.code === 4001) { setConnectionStatus('auth_failed'); return; }
       if (reconnectAttempt.current < maxReconnect) {
@@ -977,6 +1030,8 @@ const ChatDashboard = () => {
         const iv = setInterval(() => { c--; setReconnectIn(c); if (c <= 0) clearInterval(iv); }, 1000);
         reconnectTimer.current = setTimeout(() => { reconnectAttempt.current++; connectWS(); }, delay);
       } else {
+        // Only null out the socket if we've given up reconnecting
+        setWsSocket(null);
         setConnectionStatus('server_offline');
         setReconnectIn(0);
       }

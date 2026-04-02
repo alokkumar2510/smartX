@@ -285,45 +285,73 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
   const chatContainer = useRef(null);
   const typingTimeout = useRef(null);
 
-  // Load initial DM history
+  // Seen-message dedup guard (prevents doubles from WS + history overlap)
+  const seenIds = useRef(new Set());
+
+  // Load initial DM history — do NOT clear messages first (avoids blank flash)
   useEffect(() => {
     if (ws?.readyState === 1 && targetUser) {
-      setMessages([]);
+      // Reset the seen-set for the new conversation but keep old messages
+      // visible until new history arrives (zero blank flash)
+      seenIds.current = new Set();
       ws.send(JSON.stringify({ type: 'get_dm_history', target_user_id: targetUser.id, limit: 50 }));
-      // Send read receipt when opening conversation
       ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id }));
     }
-  }, [targetUser, ws]);
+  }, [targetUser?.id, ws]);
 
   // Listen for DM events
-  // NOTE: messages.length intentionally omitted from deps — we use functional
-  // updates (prev =>) so we never need the current state value as a dependency.
-  // This prevents the listener from being re-registered on every new message.
   useEffect(() => {
     if (!ws) return;
     const handler = (e) => {
       try {
         const data = JSON.parse(e.data);
+
         if (data.type === 'dm_history' && data.target_user_id === targetUser?.id) {
+          // Replace messages with server-authoritative history
+          // Build seen set from incoming messages to avoid future dupes
+          const incoming = data.messages || [];
+          const newSeen = new Set(incoming.map(m => m.id));
+
           setMessages(prev => {
-            // Infinite scroll: if we already have messages, prepend older ones
             if (data.messages?.[0]?.id && prev.length > 0) {
-              const existingIds = new Set(prev.map(m => m.id));
-              const newMsgs = data.messages.filter(m => !existingIds.has(m.id));
-              return [...newMsgs, ...prev];
+              // Infinite scroll: prepend older messages (filter already-seen)
+              const newMsgs = incoming.filter(m => !prev.some(p => p.id === m.id));
+              newMsgs.forEach(m => newSeen.add(m.id));
+              prev.forEach(m => newSeen.add(m.id));
+              seenIds.current = newSeen;
+              return [...newMsgs, ...prev.filter(m => !m._optimistic)];
             }
-            return data.messages || [];
+            // Initial load: replace optimistic messages that now have real IDs
+            seenIds.current = newSeen;
+            return incoming;
           });
           setHasMore(data.has_more || false);
           setLoadingMore(false);
+
+        } else if (data.type === 'dm_sent' && data.target_user_id === targetUser?.id) {
+          // Confirm optimistic message: replace temp entry with real server data
+          if (seenIds.current.has(data.id)) return;
+          seenIds.current.add(data.id);
+          setMessages(prev => {
+            // Find and replace the most recent optimistic message
+            const idx = [...prev].reverse().findIndex(m => m._optimistic);
+            if (idx !== -1) {
+              const realIdx = prev.length - 1 - idx;
+              const updated = [...prev];
+              updated[realIdx] = { ...data, _optimistic: false };
+              return updated;
+            }
+            return [...prev, data];
+          });
+
         } else if (data.type === 'private_message' && data.sender_id === targetUser?.id) {
+          if (seenIds.current.has(data.id)) return;
+          seenIds.current.add(data.id);
           setMessages(prev => [...prev, data]);
           playDMSound();
-          // Auto-send read receipt
           if (ws.readyState === 1)
             ws.send(JSON.stringify({ type: 'read_receipt', target_user_id: targetUser.id, message_ids: [data.id] }));
-        } else if (data.type === 'dm_sent' && data.target_user_id === targetUser?.id) {
-          setMessages(prev => [...prev, data]);
+
         } else if (data.type === 'messages_read' && data.reader_id === targetUser?.id) {
           setMessages(prev => prev.map(m =>
             m.sender_id === currentUser?.id ? { ...m, status: 'read' } : m
@@ -335,12 +363,10 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
         } else if (data.type === 'user_stop_typing' && data.user_id === targetUser?.id) {
           setIsTyping(false);
         } else if (data.type === 'dm_deleted') {
-          // Soft-delete: replace message content with tombstone
           setMessages(prev => prev.map(m =>
             m.id === data.message_id ? { ...m, deleted: 1, content: '' } : m
           ));
         } else if (data.type === 'dm_reaction') {
-          // Update reactions dict on target message
           setMessages(prev => prev.map(m =>
             m.id === data.message_id ? { ...m, reactions: data.reactions } : m
           ));
@@ -381,6 +407,7 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
     }
   };
 
+  // Optimistic send: add message to UI instantly, confirm on dm_sent
   const sendDM = (overridePayload) => {
     const payload = overridePayload || (
       input.trim() ? {
@@ -391,8 +418,33 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
       } : null
     );
     if (!payload) return;
+
+    // Add optimistic message immediately for instant UI feedback
+    if (!overridePayload) {
+      const optimistic = {
+        _optimistic: true,
+        id: `opt_${Date.now()}`,
+        sender_id: currentUser?.id,
+        sender_username: currentUser?.username,
+        target_user_id: targetUser.id,
+        content: payload.content,
+        content_type: payload.content_type || 'text',
+        status: 'sending',
+        created_at: new Date().toISOString(),
+        reply_to: replyTo || null,
+      };
+      setMessages(prev => [...prev, optimistic]);
+      setInput('');
+      setReplyTo(null);
+    }
+
     if (ws && ws.readyState === 1) ws.send(JSON.stringify(payload));
-    if (!overridePayload) { setInput(''); setReplyTo(null); }
+    else if (overridePayload === undefined) {
+      // WS not ready — show failed state on optimistic msg
+      setMessages(prev => prev.map(m =>
+        m._optimistic ? { ...m, status: 'failed' } : m
+      ));
+    }
   };
 
   const sendVoice = ({ url, duration }) => {
@@ -630,8 +682,17 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
                       </p>
                       <div className="flex items-center gap-1">
                         {isOwn && !isDeleted && (
-                          <span className="text-[8px]" style={{ color: msg.status === 'read' ? '#a5f3fc' : 'rgba(255,255,255,0.4)' }}>
-                            {msg.status === 'read' ? '✓✓' : msg.status === 'delivered' ? '✓✓' : '✓'}
+                          <span className="text-[8px]" style={{
+                            color: msg.status === 'read' ? '#a5f3fc'
+                              : msg.status === 'sending' ? 'rgba(255,255,255,0.25)'
+                              : msg.status === 'failed' ? '#f87171'
+                              : 'rgba(255,255,255,0.4)',
+                          }}>
+                            {msg.status === 'failed' ? '✗'
+                              : msg.status === 'sending' ? '⟳'
+                              : msg.status === 'read' ? '✓✓'
+                              : msg.status === 'delivered' ? '✓✓'
+                              : '✓'}
                           </span>
                         )}
                         {!isDeleted && (

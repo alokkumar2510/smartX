@@ -166,8 +166,10 @@ export function useWebRTC(currentUser, _token, ws) {
   const isPoliteRef         = useRef(false);  // false=caller, true=callee (perfect negotiation)
   const lastBytesRef        = useRef({ sent: 0, received: 0, time: Date.now() });
 
-  // Keep refs in sync
-  useEffect(() => { wsRef.current = ws; }, [ws]);
+  // Keep wsRef in sync — ONLY update when ws is non-null (don't wipe ref mid-call)
+  useEffect(() => {
+    if (ws) wsRef.current = ws;
+  }, [ws]);
   useEffect(() => { callStateRef.current = callState; }, [callState]);
 
   // ── Device Enumeration ────────────────────────────────────────
@@ -401,7 +403,12 @@ export function useWebRTC(currentUser, _token, ws) {
 
       if (state === 'connected') {
         reconnectAttemptRef.current = 0;
-        callStartRef.current = Date.now();
+        // Clear any pending reconnect timer (self-healed)
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        callStartRef.current = callStartRef.current || Date.now();
         startStatsMonitor(pc);
         playCallConnected();
         setCallState(prev => prev ? { ...prev, status: 'active' } : prev);
@@ -410,18 +417,34 @@ export function useWebRTC(currentUser, _token, ws) {
       }
 
       if (state === 'disconnected') {
-        // Wait 5s before ICE restart (may self-recover)
+        // Show reconnecting UI but wait 8s before attempting ICE restart
+        // (disconnected is transient — often self-heals within a few seconds)
+        setCallState(prev => prev ? { ...prev, status: 'reconnecting' } : prev);
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = setTimeout(() => {
           if (pcRef.current?.connectionState === 'disconnected') {
+            console.info('[WebRTC] Still disconnected after 8s — attempting ICE restart');
             attemptIceRestart();
+          } else {
+            // Self-healed — restore active status
+            setCallState(prev => prev ? { ...prev, status: 'active' } : prev);
           }
-        }, 5000);
+        }, 8000);
       }
 
       if (state === 'failed') {
-        // Immediate ICE restart on hard failure
-        clearTimeout(reconnectTimerRef.current);
+        // Hard failure — attempt ICE restart immediately
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
         attemptIceRestart();
+      }
+
+      // 'closed' is the only state where we fully tear down
+      if (state === 'closed') {
+        // Only clean up if there is no pending reconnect
+        if (!reconnectTimerRef.current) {
+          cleanup();
+        }
       }
     };
 
@@ -816,13 +839,14 @@ export function useWebRTC(currentUser, _token, ws) {
   // ── Attach / re-attach WS listener ───────────────────────────
   useEffect(() => {
     const socket = ws;
-    if (!socket) return;
+    if (!socket) return; // Don't remove listeners from old socket if ws=null during reconnect
     socket.addEventListener('message', handleWsMessage);
     return () => socket.removeEventListener('message', handleWsMessage);
   }, [ws, handleWsMessage]);
 
-  // ── Cleanup on unmount ────────────────────────────────────────
-  useEffect(() => () => cleanup(), []); // eslint-disable-line
+  // ── Cleanup ONLY on unmount (never on ws change) ──────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => cleanup(), []); // Mount/unmount only
 
   return {
     // ── Backward-compatible API (identical to useMediasoup) ──
