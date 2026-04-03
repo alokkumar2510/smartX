@@ -55,9 +55,7 @@ from server.blockchain import blockchain
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(name)s] %(message)s',
-    datefmt='%H:%M:%S'
+    level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s", datefmt="%H:%M:%S"
 )
 logger = logging.getLogger("SmartChatX.Bridge")
 
@@ -74,6 +72,7 @@ system_start_time = time.time()
 plugin_manager.register(AIPlugin())
 plugin_manager.register(EncryptionPlugin())
 plugin_manager.register(analytics_plugin)
+plugin_manager.register(blockchain_plugin)
 
 
 class ChatBridge:
@@ -119,16 +118,16 @@ class ChatBridge:
                 # Route the response
                 routing = router.route("chat", msg)
 
-                payload = json.dumps({
-                    "type": "message",
-                    "text": msg,
-                    "routing": routing.to_dict(),
-                    "protocol": "TCP",
-                    "timestamp": time.time()
-                })
-                asyncio.run_coroutine_threadsafe(
-                    self.ws.send(payload), self.ws_loop
+                payload = json.dumps(
+                    {
+                        "type": "message",
+                        "text": msg,
+                        "routing": routing.to_dict(),
+                        "protocol": "TCP",
+                        "timestamp": time.time(),
+                    }
                 )
+                asyncio.run_coroutine_threadsafe(self.ws.send(payload), self.ws_loop)
             except socket.timeout:
                 continue
             except Exception:
@@ -136,11 +135,12 @@ class ChatBridge:
 
         if self.running:
             asyncio.run_coroutine_threadsafe(
-                self.ws.send(json.dumps({
-                    "type": "system",
-                    "text": "⚠️ Disconnected from TCP server."
-                })),
-                self.ws_loop
+                self.ws.send(
+                    json.dumps(
+                        {"type": "system", "text": "⚠️ Disconnected from TCP server."}
+                    )
+                ),
+                self.ws_loop,
             )
 
     # ── UDP receive loop (background thread) ─────────────────
@@ -149,14 +149,8 @@ class ChatBridge:
             try:
                 data, _ = self.udp_sock.recvfrom(1024)
                 msg = data.decode().strip()
-                payload = json.dumps({
-                    "type": "typing",
-                    "text": msg,
-                    "protocol": "UDP"
-                })
-                asyncio.run_coroutine_threadsafe(
-                    self.ws.send(payload), self.ws_loop
-                )
+                payload = json.dumps({"type": "typing", "text": msg, "protocol": "UDP"})
+                asyncio.run_coroutine_threadsafe(self.ws.send(payload), self.ws_loop)
             except socket.timeout:
                 continue
             except Exception:
@@ -172,10 +166,14 @@ class ChatBridge:
             self.connect_tcp()
             self.connect_udp()
         except ConnectionRefusedError:
-            await self.ws.send(json.dumps({
-                "type": "error",
-                "text": "❌ Cannot reach chat servers. Is run_all.py running?"
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "text": "❌ Cannot reach chat servers. Is run_all.py running?",
+                    }
+                )
+            )
             return
 
         # Read the server's username prompt
@@ -237,11 +235,15 @@ class ChatBridge:
                     await self._handle_encryption_flow(data)
 
                 elif kind == "ping_latency":
-                    await self.ws.send(json.dumps({
-                        "type": "pong_latency",
-                        "timestamp": data.get("timestamp", 0),
-                        "server_time": time.time()
-                    }))
+                    await self.ws.send(
+                        json.dumps(
+                            {
+                                "type": "pong_latency",
+                                "timestamp": data.get("timestamp", 0),
+                                "server_time": time.time(),
+                            }
+                        )
+                    )
 
                 # ── WebRTC Signaling ──────────────────────
                 elif kind == "webrtc_offer":
@@ -278,10 +280,7 @@ class ChatBridge:
         self.tcp_sock.sendall(self.username.encode())
 
         # Register in connected clients
-        connected_clients[self.ws] = {
-            "username": self.username,
-            "bridge": self
-        }
+        connected_clients[self.ws] = {"username": self.username, "bridge": self}
         webrtc_peers[self.username] = self.ws
 
         # Distributed: assign to a node
@@ -291,14 +290,18 @@ class ChatBridge:
         message_queue.set_user_online(self.username)
         queued = message_queue.dequeue_all(self.username)
         if queued:
-            await self.ws.send(json.dumps({
-                "type": "queued_messages",
-                "count": len(queued),
-                "messages": [
-                    {"sender": m.sender, "text": m.text, "time": m.timestamp}
-                    for m in queued
-                ]
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "queued_messages",
+                        "count": len(queued),
+                        "messages": [
+                            {"sender": m.sender, "text": m.text, "time": m.timestamp}
+                            for m in queued
+                        ],
+                    }
+                )
+            )
 
         # Gamification: create profile
         gamification.get_or_create_profile(self.username)
@@ -313,29 +316,34 @@ class ChatBridge:
         peer_list = list(webrtc_peers.keys())
         for ws_client, info in connected_clients.items():
             try:
-                await ws_client.send(json.dumps({
-                    "type": "peer_list",
-                    "peers": peer_list
-                }))
+                await ws_client.send(
+                    json.dumps({"type": "peer_list", "peers": peer_list})
+                )
             except:
                 pass
 
         # Send session info to client
-        await self.ws.send(json.dumps({
-            "type": "session_info",
-            "username": self.username,
-            "assigned_node": self.assigned_node,
-            "encryption": {
-                "session_id": key_info["session_id"],
-                "algorithm": key_info["algorithm"],
-                "key_preview": key_info["public_key_preview"]
-            },
-            "blockchain": blockchain.get_stats(),
-            "server_time": time.time()
-        }))
+        await self.ws.send(
+            json.dumps(
+                {
+                    "type": "session_info",
+                    "username": self.username,
+                    "assigned_node": self.assigned_node,
+                    "encryption": {
+                        "session_id": key_info["session_id"],
+                        "algorithm": key_info["algorithm"],
+                        "key_preview": key_info["public_key_preview"],
+                    },
+                    "blockchain": blockchain.get_stats(),
+                    "server_time": time.time(),
+                }
+            )
+        )
 
-        logger.info(f"✅ User '{self.username}' session established | "
-                     f"Node: {self.assigned_node.get('node_name', 'N/A')}")
+        logger.info(
+            f"✅ User '{self.username}' session established | "
+            f"Node: {self.assigned_node.get('node_name', 'N/A')}"
+        )
 
         await asyncio.sleep(0.2)
 
@@ -353,29 +361,41 @@ class ChatBridge:
             "text": text,
             "sender": self.username,
             "type": "chat",
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
         processed = plugin_manager.process_message(msg_data)
 
         if processed is None or processed.get("blocked"):
             # Message blocked by plugin (e.g., toxicity)
-            await self.ws.send(json.dumps({
-                "type": "message_blocked",
-                "reason": processed.get("block_reason", "blocked_by_plugin") if processed else "blocked",
-                "text": "⚠️ Message blocked by safety filter.",
-                "toxicity": processed.get("ai_analysis", {}).get("toxicity", {}) if processed else {}
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "message_blocked",
+                        "reason": processed.get("block_reason", "blocked_by_plugin")
+                        if processed
+                        else "blocked",
+                        "text": "⚠️ Message blocked by safety filter.",
+                        "toxicity": processed.get("ai_analysis", {}).get("toxicity", {})
+                        if processed
+                        else {},
+                    }
+                )
+            )
             logger.warning(f"🚫 Message from {self.username} blocked")
             return
 
         # ── Step 3: Network Simulation ────────────────────
         sim_result = await network_sim.process_message(msg_data)
         if not sim_result["delivered"]:
-            await self.ws.send(json.dumps({
-                "type": "packet_lost",
-                "simulation": sim_result["simulation"],
-                "text": "📡 Packet lost in network simulation!"
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "type": "packet_lost",
+                        "simulation": sim_result["simulation"],
+                        "text": "📡 Packet lost in network simulation!",
+                    }
+                )
+            )
             return
 
         # ── Step 4: Send via TCP ──────────────────────────
@@ -398,8 +418,8 @@ class ChatBridge:
             "gamification": {
                 "xp": game_result["xp"],
                 "new_badges": game_result.get("new_badges", []),
-                "profile": game_result.get("profile", {})
-            }
+                "profile": game_result.get("profile", {}),
+            },
         }
 
         if study_response:
@@ -407,27 +427,27 @@ class ChatBridge:
 
         await self.ws.send(json.dumps(response))
 
-        logger.info(f"📨 Pipeline complete | {self.username} | "
-                     f"Route: {routing.protocol} | "
-                     f"AI: {processed.get('ai_analysis', {}).get('intent', 'N/A')} | "
-                     f"Block: #{processed.get('blockchain', {}).get('block_index', '?')} | "
-                     f"XP: +{game_result['xp']['xp_gained']}")
+        logger.info(
+            f"📨 Pipeline complete | {self.username} | "
+            f"Route: {routing.protocol} | "
+            f"AI: {processed.get('ai_analysis', {}).get('intent', 'N/A')} | "
+            f"Block: #{processed.get('blockchain', {}).get('block_index', '?')} | "
+            f"XP: +{game_result['xp']['xp_gained']}"
+        )
 
     def _handle_typing(self):
         """Send typing indicator via UDP."""
         if self.username:
             router.route("typing")
             self.udp_sock.sendto(
-                f"TYPING:{self.username}".encode(),
-                (CHAT_HOST, UDP_PORT)
+                f"TYPING:{self.username}".encode(), (CHAT_HOST, UDP_PORT)
             )
 
     def _handle_stopped(self):
         """Send stop-typing via UDP."""
         if self.username:
             self.udp_sock.sendto(
-                f"STOPPED:{self.username}".encode(),
-                (CHAT_HOST, UDP_PORT)
+                f"STOPPED:{self.username}".encode(), (CHAT_HOST, UDP_PORT)
             )
 
     async def _send_dashboard(self):
@@ -447,24 +467,24 @@ class ChatBridge:
             "cluster": load_balancer.get_cluster_status(),
             "analytics": analytics_plugin.get_analytics(),
             "blockchain": blockchain.get_stats(),
-            "webrtc_peers": list(webrtc_peers.keys())
+            "webrtc_peers": list(webrtc_peers.keys()),
         }
         await self.ws.send(json.dumps(dashboard))
 
     async def _send_leaderboard(self):
         """Send gamification leaderboard."""
-        await self.ws.send(json.dumps({
-            "type": "leaderboard",
-            "data": gamification.get_leaderboard()
-        }))
+        await self.ws.send(
+            json.dumps({"type": "leaderboard", "data": gamification.get_leaderboard()})
+        )
 
     async def _send_profile(self):
         """Send user's gamification profile."""
         if self.username:
-            await self.ws.send(json.dumps({
-                "type": "profile",
-                "data": gamification.get_profile(self.username)
-            }))
+            await self.ws.send(
+                json.dumps(
+                    {"type": "profile", "data": gamification.get_profile(self.username)}
+                )
+            )
 
     async def _handle_network_condition(self, data):
         """Set network simulation condition."""
@@ -479,10 +499,9 @@ class ChatBridge:
         else:
             condition = network_sim.set_condition(preset_name=preset)
 
-        await self.ws.send(json.dumps({
-            "type": "network_condition_updated",
-            "condition": condition
-        }))
+        await self.ws.send(
+            json.dumps({"type": "network_condition_updated", "condition": condition})
+        )
 
         # Award XP for using network simulator
         gamification.get_or_create_profile(self.username)
@@ -510,20 +529,15 @@ class ChatBridge:
         """Toggle a plugin on/off."""
         name = data.get("plugin_name", "")
         new_state = plugin_manager.toggle(name)
-        await self.ws.send(json.dumps({
-            "type": "plugin_toggled",
-            "plugin": name,
-            "enabled": new_state
-        }))
+        await self.ws.send(
+            json.dumps({"type": "plugin_toggled", "plugin": name, "enabled": new_state})
+        )
 
     async def _handle_encryption_flow(self, data):
         """Show encryption/decryption flow for a message."""
         text = data.get("text", "Hello, World!")
         flow = encryption_engine.get_flow_for_message(text, self.username or "demo")
-        await self.ws.send(json.dumps({
-            "type": "encryption_flow",
-            "flow": flow
-        }))
+        await self.ws.send(json.dumps({"type": "encryption_flow", "flow": flow}))
 
     # ── WebRTC Signaling Relay ────────────────────────────────
     async def _relay_webrtc(self, data, signal_type):
@@ -534,7 +548,7 @@ class ChatBridge:
             relay_data = {
                 "type": signal_type,
                 "sender": self.username,
-                **{k: v for k, v in data.items() if k not in ("type", "target")}
+                **{k: v for k, v in data.items() if k not in ("type", "target")},
             }
             try:
                 await target_ws.send(json.dumps(relay_data))
@@ -547,18 +561,14 @@ class ChatBridge:
     # ── Blockchain Handlers ──────────────────────────────────
     async def _send_blockchain(self):
         """Send blockchain data to the client."""
-        await self.ws.send(json.dumps({
-            "type": "blockchain_data",
-            "data": blockchain.get_stats()
-        }))
+        await self.ws.send(
+            json.dumps({"type": "blockchain_data", "data": blockchain.get_stats()})
+        )
 
     async def _validate_chain(self):
         """Validate and return chain integrity."""
         result = blockchain.validate_chain()
-        await self.ws.send(json.dumps({
-            "type": "chain_validation",
-            "data": result
-        }))
+        await self.ws.send(json.dumps({"type": "chain_validation", "data": result}))
 
     async def _tamper_demo(self, data):
         """Demonstrate blockchain tamper detection."""
@@ -566,11 +576,15 @@ class ChatBridge:
         msg = data.get("new_message", "TAMPERED!")
         tamper_result = blockchain.tamper_block(idx, msg)
         validation = blockchain.validate_chain()
-        await self.ws.send(json.dumps({
-            "type": "tamper_result",
-            "tamper": tamper_result,
-            "validation": validation
-        }))
+        await self.ws.send(
+            json.dumps(
+                {
+                    "type": "tamper_result",
+                    "tamper": tamper_result,
+                    "validation": validation,
+                }
+            )
+        )
 
     async def _cleanup(self):
         """Clean up on disconnect."""
@@ -595,16 +609,17 @@ class ChatBridge:
             peer_list = list(webrtc_peers.keys())
             for ws_client in list(connected_clients.keys()):
                 try:
-                    await ws_client.send(json.dumps({
-                        "type": "peer_list",
-                        "peers": peer_list
-                    }))
+                    await ws_client.send(
+                        json.dumps({"type": "peer_list", "peers": peer_list})
+                    )
                 except:
                     pass
 
-            logger.info(f"👋 {self.username} disconnected | "
-                         f"Sent: {self.messages_sent} | "
-                         f"Received: {self.messages_received}")
+            logger.info(
+                f"👋 {self.username} disconnected | "
+                f"Sent: {self.messages_sent} | "
+                f"Received: {self.messages_received}"
+            )
 
         try:
             self.tcp_sock.close()
@@ -617,6 +632,7 @@ class ChatBridge:
 
 
 # ── WebSocket Server ──────────────────────────────────────────
+
 
 async def handler(websocket):
     bridge = ChatBridge(websocket)

@@ -2,7 +2,8 @@
 ─── chat_routes.py ───────────────────────────────────────
 Chat-related API endpoints.
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body
 from app.controllers.chat_controller import ChatController
 
 router = APIRouter()
@@ -16,7 +17,7 @@ async def get_chat_history(room_id: str, limit: int = 50):
 
 
 @router.post("/send")
-async def send_message(payload: dict):
+async def send_message(payload: dict = Body(...)):
     """Send a chat message via REST (fallback)."""
     return await controller.send_message(payload)
 
@@ -28,7 +29,7 @@ async def get_rooms():
 
 
 @router.post("/rooms")
-async def create_room(payload: dict):
+async def create_room(payload: dict = Body(...)):
     """Create a new chat room."""
     return await controller.create_room(payload.get("name", "General"))
 

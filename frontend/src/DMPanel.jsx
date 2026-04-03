@@ -417,7 +417,6 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
     };
     ws.addEventListener('message', handler);
     return () => ws.removeEventListener('message', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws, targetUser?.id, currentUser?.id]);
 
   // Smart auto-scroll: only scroll to bottom if user is already near bottom

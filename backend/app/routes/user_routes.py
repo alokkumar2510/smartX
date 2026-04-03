@@ -2,7 +2,8 @@
 ─── user_routes.py ───────────────────────────────────────
 User management API endpoints.
 """
-from fastapi import APIRouter
+
+from fastapi import APIRouter, Body
 from app.controllers.user_controller import UserController
 
 router = APIRouter()
@@ -10,7 +11,7 @@ controller = UserController()
 
 
 @router.post("/register")
-async def register_user(payload: dict):
+async def register_user(payload: dict = Body(...)):
     """Register a new user with a username."""
     return await controller.register(payload.get("username", ""))
 
@@ -22,7 +23,7 @@ async def get_user(user_id: str):
 
 
 @router.put("/settings")
-async def update_settings(payload: dict):
+async def update_settings(payload: dict = Body(...)):
     """Update user settings."""
     return await controller.update_settings(payload)
 

@@ -3,6 +3,7 @@
 TCP Socket Server for reliable message delivery.
 Handles multiple clients via threading.
 """
+
 import socket
 import threading
 import json
@@ -19,6 +20,7 @@ class TCPServer:
         self.port = port
         self.server_socket = None
         self.clients = {}  # addr -> socket
+        self.clients_lock = threading.Lock()
         self.running = False
 
     def start(self):
@@ -35,8 +37,11 @@ class TCPServer:
             try:
                 client_socket, addr = self.server_socket.accept()
                 logger.info(f"TCP client connected: {addr}")
-                self.clients[addr] = client_socket
-                thread = threading.Thread(target=self._handle_client, args=(client_socket, addr))
+                with self.clients_lock:
+                    self.clients[addr] = client_socket
+                thread = threading.Thread(
+                    target=self._handle_client, args=(client_socket, addr)
+                )
                 thread.daemon = True
                 thread.start()
             except OSError:
@@ -65,28 +70,34 @@ class TCPServer:
                 # Broadcast to other clients
                 self._broadcast(response, exclude=addr)
 
-        except (json.JSONDecodeError, ConnectionResetError) as e:
+        except (json.JSONDecodeError, ConnectionResetError, UnicodeDecodeError) as e:
             logger.warning(f"TCP client error [{addr}]: {e}")
         finally:
             client_socket.close()
-            self.clients.pop(addr, None)
+            with self.clients_lock:
+                self.clients.pop(addr, None)
             logger.info(f"TCP client disconnected: {addr}")
 
     def _broadcast(self, message: dict, exclude: tuple = None):
         """Send message to all connected TCP clients."""
         data = json.dumps(message).encode()
-        for addr, sock in list(self.clients.items()):
+        with self.clients_lock:
+            clients_snapshot = list(self.clients.items())
+        for addr, sock in clients_snapshot:
             if addr != exclude:
                 try:
                     sock.sendall(data)
                 except Exception:
-                    self.clients.pop(addr, None)
+                    with self.clients_lock:
+                        self.clients.pop(addr, None)
 
     def stop(self):
         """Gracefully stop the TCP server."""
         self.running = False
-        for sock in self.clients.values():
-            sock.close()
+        with self.clients_lock:
+            for sock in self.clients.values():
+                sock.close()
+            self.clients.clear()
         if self.server_socket:
             self.server_socket.close()
         logger.info("TCP Server stopped")

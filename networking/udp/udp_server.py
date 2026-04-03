@@ -3,6 +3,7 @@
 UDP Socket Server for low-latency message delivery.
 Used for typing indicators, presence, and real-time events.
 """
+
 import socket
 import json
 import logging
@@ -45,8 +46,8 @@ class UDPServer:
                 # Broadcast to other clients (fire-and-forget)
                 self._broadcast(response, exclude=addr)
 
-            except json.JSONDecodeError:
-                logger.warning(f"UDP: Invalid JSON from {addr}")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.warning(f"UDP: Invalid data from {addr}")
             except OSError:
                 break
 
@@ -57,7 +58,12 @@ class UDPServer:
         if msg_type == "typing":
             return {"type": "typing", "user": message.get("user"), "protocol": "UDP"}
         elif msg_type == "presence":
-            return {"type": "presence", "user": message.get("user"), "status": "online", "protocol": "UDP"}
+            return {
+                "type": "presence",
+                "user": message.get("user"),
+                "status": "online",
+                "protocol": "UDP",
+            }
         elif msg_type == "heartbeat":
             return {"type": "heartbeat_ack", "protocol": "UDP"}
         else:

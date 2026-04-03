@@ -3,6 +3,7 @@
 High-level message encode/decode combining serialization
 with the packet system.
 """
+
 from .json_serializer import JSONSerializer
 from .binary_serializer import BinarySerializer
 
@@ -13,12 +14,13 @@ class MessageCodec:
     def __init__(self, format: str = "json"):
         self.format = format
 
-    def encode(self, message: dict) -> bytes:
+    def encode(self, message: dict, seq: int = 0) -> bytes:
         """Encode a message using the configured format."""
         if self.format == "binary":
             payload = JSONSerializer.encode(message)
+            checksum = sum(payload) & 0xFFFF
             return BinarySerializer.encode_packet(
-                version=1, ptype=0, seq=0, payload=payload, checksum=0
+                version=1, ptype=0, seq=seq, payload=payload, checksum=checksum
             )
         return JSONSerializer.encode(message)
 

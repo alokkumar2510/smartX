@@ -3,7 +3,8 @@
 Application settings loaded from environment variables.
 Uses Pydantic BaseSettings for validation and defaults.
 """
-from pydantic_settings import BaseSettings
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 
@@ -37,6 +38,4 @@ class Settings(BaseSettings):
     # ─── Logging ─────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)

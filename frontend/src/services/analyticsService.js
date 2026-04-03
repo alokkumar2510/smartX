@@ -2,22 +2,22 @@
  * ─── analyticsService.js ───────────────────────────────
  * API service for analytics data.
  */
-import api from './api';
+import { API } from './api';
 
 const analyticsService = {
   /** Get dashboard stats */
-  getStats: () => api.get('/analytics/stats'),
+  getStats: () => fetch(`${API}/analytics/stats`).then(r => r.json()),
 
   /** Get protocol distribution data */
-  getProtocolDistribution: () => api.get('/analytics/protocols'),
+  getProtocolDistribution: () => fetch(`${API}/analytics/protocols`).then(r => r.json()),
 
   /** Get latency history */
   getLatencyHistory: (minutes = 30) =>
-    api.get('/analytics/latency', { params: { minutes } }),
+    fetch(`${API}/analytics/latency?minutes=${minutes}`).then(r => r.json()),
 
   /** Get message timeline */
   getTimeline: (interval = '5m') =>
-    api.get('/analytics/timeline', { params: { interval } }),
+    fetch(`${API}/analytics/timeline?interval=${interval}`).then(r => r.json()),
 };
 
 export default analyticsService;

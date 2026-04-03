@@ -2,6 +2,7 @@
 ─── queue_service.py ─────────────────────────────────────
 Priority-based message queue with offline storage.
 """
+
 import heapq
 from datetime import datetime
 
@@ -14,11 +15,13 @@ class QueueService:
     def __init__(self):
         self._queue = []
         self._offline_store = {}  # user_id -> messages
+        self._counter = 0  # monotonic counter to avoid dict comparison crashes
 
     def enqueue(self, message: dict, priority: str = "normal"):
         """Add a message to the priority queue."""
         p = self.PRIORITY_MAP.get(priority, 2)
-        heapq.heappush(self._queue, (p, datetime.utcnow().isoformat(), message))
+        self._counter += 1
+        heapq.heappush(self._queue, (p, self._counter, message))
 
     def dequeue(self):
         """Get the highest priority message."""

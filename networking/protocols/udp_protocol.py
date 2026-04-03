@@ -2,6 +2,7 @@
 ─── udp_protocol.py ──────────────────────────────────────
 UDP-specific protocol implementation.
 """
+
 import socket
 from .base_protocol import BaseProtocol
 
@@ -18,7 +19,7 @@ class UDPProtocol(BaseProtocol):
         self._address = address
 
     def send(self, data: bytes, destination: tuple = None) -> bool:
-        target = destination or getattr(self, '_address', None)
+        target = destination or getattr(self, "_address", None)
         if not target:
             return False
         try:
@@ -32,7 +33,9 @@ class UDPProtocol(BaseProtocol):
         return data
 
     def disconnect(self):
-        self._socket.close()
+        if self._socket:
+            self._socket.close()
+            self._socket = None
 
     @property
     def protocol_name(self) -> str:

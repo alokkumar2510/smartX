@@ -2,6 +2,7 @@
 ─── tcp_protocol.py ──────────────────────────────────────
 TCP-specific protocol implementation.
 """
+
 import socket
 from .base_protocol import BaseProtocol
 
@@ -17,6 +18,8 @@ class TCPProtocol(BaseProtocol):
         self._socket.connect(address)
 
     def send(self, data: bytes, destination: tuple = None) -> bool:
+        if not self._socket:
+            return False
         try:
             self._socket.sendall(data)
             return True
@@ -24,11 +27,14 @@ class TCPProtocol(BaseProtocol):
             return False
 
     def receive(self, buffer_size: int = 4096) -> bytes:
+        if not self._socket:
+            return b""
         return self._socket.recv(buffer_size)
 
     def disconnect(self):
         if self._socket:
             self._socket.close()
+            self._socket = None
 
     @property
     def protocol_name(self) -> str:

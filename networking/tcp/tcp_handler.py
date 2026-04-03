@@ -2,6 +2,7 @@
 ─── tcp_handler.py ───────────────────────────────────────
 TCP connection handler — processes incoming TCP data.
 """
+
 import json
 from typing import Callable, Optional
 
@@ -26,6 +27,10 @@ class TCPHandler:
                 self._buffer = b""
             except json.JSONDecodeError:
                 # Incomplete message, wait for more data
+                break
+            except UnicodeDecodeError:
+                # Invalid encoding — discard buffer to avoid infinite loop
+                self._buffer = b""
                 break
 
         if self.on_message:
