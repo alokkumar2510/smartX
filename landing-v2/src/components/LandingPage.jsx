@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { HeroFuturistic } from './ui/hero-futuristic';
 
 /* ── App URL — update here if domain changes ── */
 const APP_URL = 'https://smartx.alokkumarsahu.in';
@@ -147,29 +148,6 @@ const GlassCard = ({ children, style = {}, className = '', onMouseEnter, onMouse
 );
 
 /* ─────────────────────────────────────────────────────────────
-   GLOBAL VIDEO BACKGROUND
-   ───────────────────────────────────────────────────────────── */
-const VideoBg = () => {
-  const GLOBAL_VIDEO_URL = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260330_145725_08886141-ed95-4a8e-8d6d-b75eaadce638.mp4';
-  
-  return (
-    <div style={{ position:'fixed', inset:0, zIndex:0, pointerEvents:'none', overflow:'hidden', background:'#05050A' }}>
-      <video style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover', opacity: 0.65, mixBlendMode: 'screen'
-        }}
-        src={GLOBAL_VIDEO_URL} autoPlay muted loop playsInline preload="auto" aria-hidden="true"
-      />
-      {/* Delicate Gradient overlay — keeps page readable but doesn't crush to black */}
-      <div style={{
-        position:'absolute', inset:0,
-        background:'linear-gradient(to bottom, rgba(10,5,20,0.4) 0%, rgba(5,0,10,0.8) 100%)',
-      }} />
-    </div>
-  );
-};
-
-/* ─────────────────────────────────────────────────────────────
    NAVBAR
    ───────────────────────────────────────────────────────────── */
 const Navbar = ({ scrolled }) => {
@@ -249,110 +227,33 @@ const Navbar = ({ scrolled }) => {
 };
 
 /* ─────────────────────────────────────────────────────────────
-   HERO SECTION
+   HERO SECTION — 3D Futuristic Hero with SmartChat X branding
    ───────────────────────────────────────────────────────────── */
 const HeroSection = () => {
-  return (
-    <section style={{ position:'relative', width:'100%', minHeight:'100vh',
-      display:'flex', flexDirection:'column', background:'transparent', overflow:'hidden' }}>
-      
-      {/* Soft glassmorphic hero overlay instead of black */}
-      <div style={{ position:'absolute', inset:0, background:'rgba(15, 10, 35, 0.2)', backdropFilter:'blur(2px)', zIndex:2 }} aria-hidden="true"/>
-
-      {/* Hero content */}
-      <div style={{ position:'relative', zIndex:10, display:'flex', flexDirection:'column',
-        alignItems:'center', textAlign:'center', width:'100%',
-        paddingTop:'clamp(200px,20vw,280px)', paddingBottom:'102px',
-        paddingLeft:'24px', paddingRight:'24px' }}>
-
-        <GlassCard style={{ display:'inline-flex', alignItems:'center', gap:'8px',
-          padding:'8px 16px', marginBottom:'40px', borderRadius: '30px',
-          animation:'fadeInDown 0.8s cubic-bezier(0.16,1,0.3,1) 0.2s both' }}>
-          <span style={{ width:'6px', height:'6px', borderRadius:'50%',
-            background:'#fff', flexShrink:0, display:'inline-block', boxShadow: '0 0 8px #fff' }}/>
-          <span style={{ fontSize:'13px', fontWeight:'500', letterSpacing:'-0.01em', lineHeight:1 }}>
-            <span style={{ color:'rgba(255,255,255,0.7)' }}>Now in beta — </span>
-            <span style={{ color:'#fff', textShadow: '0 0 10px rgba(255,255,255,0.4)' }}>Join 500+ early builders</span>
-          </span>
-        </GlassCard>
-
-        {/* H1 */}
-        <h1 className="hero-heading-gradient" style={{
-          maxWidth:'700px', fontSize:'clamp(40px,6vw,72px)',
-          fontWeight:'600', lineHeight:'1.12', letterSpacing:'-0.04em',
-          fontFamily:'inherit', marginBottom:'36px',
-          filter: 'drop-shadow(0 4px 20px rgba(0,0,0,0.5))',
-          animation:'fadeInUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.35s both' }}>
-          Communication at the Speed of Thought
-        </h1>
-
-        {/* Subtitle */}
-        <p style={{ maxWidth:'560px', fontSize:'16px', fontWeight:'400', lineHeight:'1.7',
-          color:'rgba(255,255,255,0.85)', fontFamily:'inherit', letterSpacing:'-0.01em',
-          marginBottom:'40px', animation:'fadeInUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.5s both',
-          textShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
-          SmartChat X is a next-generation platform powered by WebRTC, Groq AI, and dual TCP/UDP routing — built for speed, privacy, and intelligence.
-        </p>
-
-        {/* CTAs */}
-        <div style={{ display:'flex', gap:'16px', flexWrap:'wrap', justifyContent:'center',
-          animation:'fadeInUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.65s both' }}>
-          <PillWhite onClick={()=>window.open(APP_URL,'_blank')}>Launch App <ArrowRight size={12}/></PillWhite>
-          <PillDark onClick={()=>document.getElementById('features')?.scrollIntoView({behavior:'smooth'})}>
-            Explore Features
-          </PillDark>
-        </div>
-
-        {/* Stats */}
-        <div style={{ display:'flex', gap:'48px', marginTop:'80px', flexWrap:'wrap', justifyContent:'center',
-          animation:'fadeInUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.8s both' }}>
-          {[
-            {value:'<50ms',label:'Message Latency'},
-            {value:'WebRTC',label:'P2P Video & Audio'},
-            {value:'Groq AI',label:'Smart Replies'},
-            {value:'TCP+UDP',label:'Dual Protocol'},
-          ].map(s=>(
-            <GlassCard key={s.label} style={{ textAlign:'center', padding: '16px 24px', borderRadius: '20px' }}>
-              <div style={{ fontSize:'24px', fontWeight:'600', color:'#fff',
-                letterSpacing:'-0.03em', marginBottom:'4px', textShadow: '0 0 15px rgba(255,255,255,0.5)' }}>{s.value}</div>
-              <div style={{ fontSize:'13px', color:'rgba(255,255,255,0.6)', fontWeight:'500',
-                letterSpacing:'0.02em' }}>{s.label}</div>
-            </GlassCard>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
+  return <HeroFuturistic />;
 };
 
 /* ─────────────────────────────────────────────────────────────
-   FEATURES SECTION
+   GLOBAL VIDEO BACKGROUND — only shows after scrolling past hero
    ───────────────────────────────────────────────────────────── */
-const FeatureCard = ({ icon, title, desc, delay }) => {
-  const [ref, visible] = useScrollReveal({ threshold: 0.1 });
-  const [hovered, setHovered] = useState(false);
-
+const VideoBg = ({ hidden }) => {
+  const GLOBAL_VIDEO_URL = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260330_145725_08886141-ed95-4a8e-8d6d-b75eaadce638.mp4';
+  
+  if (hidden) return null;
+  
   return (
-    <div ref={ref}
-      onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(40px)',
-        transition: `opacity 0.65s ease ${delay}ms, transform 0.65s cubic-bezier(0.16,1,0.3,1) ${delay}ms,
-          background 0.3s, border-color 0.3s, box-shadow 0.3s, transform 0.3s, backdrop-filter 0.3s`,
-        background: hovered ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-        border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)'}`,
-        borderRadius:'24px', padding:'32px', 
-        backdropFilter: hovered ? 'blur(24px)' : 'blur(16px)',
-        WebkitBackdropFilter: hovered ? 'blur(24px)' : 'blur(16px)',
-        boxShadow: hovered ? '0 12px 40px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.1)' : '0 4px 20px rgba(0,0,0,0.15), inset 0 0 0 1px rgba(255,255,255,0.05)',
-      }}>
-      <div style={{ fontSize:'32px', marginBottom:'20px', lineHeight:1, filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.3))' }}>{icon}</div>
-      <h3 style={{ fontSize:'17px', fontWeight:'600', color:'#fff',
-        letterSpacing:'-0.02em', marginBottom:'12px', lineHeight:1.2,
-        textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>{title}</h3>
-      <p style={{ fontSize:'14px', color:'rgba(255,255,255,0.7)', lineHeight:'1.65',
-        fontWeight:'400', letterSpacing:'-0.005em' }}>{desc}</p>
+    <div style={{ position:'fixed', inset:0, zIndex:0, pointerEvents:'none', overflow:'hidden', background:'#05050A' }}>
+      <video style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          objectFit: 'cover', opacity: 0.65, mixBlendMode: 'screen'
+        }}
+        src={GLOBAL_VIDEO_URL} autoPlay muted loop playsInline preload="auto" aria-hidden="true"
+      />
+      {/* Delicate Gradient overlay — keeps page readable but doesn't crush to black */}
+      <div style={{
+        position:'absolute', inset:0,
+        background:'linear-gradient(to bottom, rgba(10,5,20,0.4) 0%, rgba(5,0,10,0.8) 100%)',
+      }} />
     </div>
   );
 };
@@ -750,8 +651,8 @@ const LandingPage = () => {
         }
       `}</style>
 
-      {/* Fixed video background that persists while scrolling */}
-      <VideoBg />
+      {/* Fixed video background — only after scrolling past hero */}
+      {scrolled && <VideoBg />}
 
       {/* Sticky navbar */}
       <Navbar scrolled={scrolled}/>
