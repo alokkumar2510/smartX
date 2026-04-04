@@ -670,8 +670,8 @@ const LandingPage = () => {
         }
       `}</style>
 
-      {/* Fixed dotted surface background — only after scrolling past hero */}
-      {scrolled && <DottedSurface style={{ background: '#05050A' }} />}
+      {/* Fixed dotted surface background — across entire page */}
+      <DottedSurface style={{ background: '#05050A' }} />
 
       {/* Sticky navbar */}
       <Navbar scrolled={scrolled}/>

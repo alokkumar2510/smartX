@@ -201,7 +201,7 @@ export const HeroFuturistic = () => {
   }, [visibleWords, titleWords.length]);
 
   return (
-    <section className="relative w-full" style={{ minHeight: '100vh', background: '#000' }}>
+    <section className="relative w-full" style={{ minHeight: '100vh', background: 'transparent' }}>
       <div className="h-svh uppercase items-center w-full absolute z-60 pointer-events-none px-10 flex justify-center flex-col">
         <div className="text-3xl md:text-5xl xl:text-6xl 2xl:text-7xl font-extrabold">
           <div className="flex space-x-2 lg:space-x-6 overflow-hidden text-white" style={{ textShadow: '0 0 30px rgba(99, 102, 241, 0.5)' }}>
@@ -250,19 +250,6 @@ export const HeroFuturistic = () => {
           <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.7)', animation: 'scrollDot 1.5s ease-in-out infinite' }} />
         </div>
       </div>
-
-      <Canvas
-        flat
-        gl={async (props) => {
-          const renderer = new THREE.WebGPURenderer(props as any);
-          await renderer.init();
-          return renderer;
-        }}
-        style={{ position: 'absolute', inset: 0, zIndex: 0, width: '100%', height: '100%', display: 'block' }}
-      >
-        <PostProcessing fullScreenEffect={true} />
-        <Scene />
-      </Canvas>
     </section>
   );
 };
