@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { HeroFuturistic } from './ui/hero-futuristic';
+import { SpotlightCard } from './ui/spotlight-card';
 
 /* ── App URL — update here if domain changes ── */
 const APP_URL = 'https://smartx.alokkumarsahu.in';
@@ -128,23 +129,28 @@ const GH = ({ children, style = {}, as: Tag = 'h2' }) => (
 );
 
 /* Glass Card primitive */
-const GlassCard = ({ children, style = {}, className = '', onMouseEnter, onMouseLeave }) => (
-  <div 
+const GlassCard = ({ children, style = {}, className = '', glowColor = 'blue', onMouseEnter, onMouseLeave }) => (
+  <SpotlightCard 
     className={`glass-card ${className}`}
     onMouseEnter={onMouseEnter}
     onMouseLeave={onMouseLeave}
-    style={{
-      background: 'rgba(255, 255, 255, 0.03)',
-      backdropFilter: 'blur(20px)',
-      WebkitBackdropFilter: 'blur(20px)',
-      border: '1px solid rgba(255, 255, 255, 0.1)',
-      borderRadius: '24px',
-      boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.05)',
-      ...style
-    }}
+    style={style}
+    glowColor={glowColor}
+    customSize
   >
     {children}
-  </div>
+  </SpotlightCard>
+);
+
+/* Feature Card for features section */
+const FeatureCard = ({ icon, title, desc, delay, color }) => (
+  <Reveal delay={delay} style={{ height: '100%' }}>
+    <GlassCard glowColor={color} style={{ padding: '32px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ fontSize: '32px', marginBottom: '20px', background: 'rgba(255,255,255,0.1)', width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '16px', boxShadow: 'inset 0 0 12px rgba(255,255,255,0.2)' }}>{icon}</div>
+      <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#fff', marginBottom: '12px', letterSpacing: '-0.02em', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>{title}</h3>
+      <p style={{ fontSize: '15.5px', color: 'rgba(255,255,255,0.7)', lineHeight: '1.65', fontWeight: '400', flex: 1 }}>{desc}</p>
+    </GlassCard>
+  </Reveal>
 );
 
 /* ─────────────────────────────────────────────────────────────
@@ -293,9 +299,10 @@ const FeaturesSection = () => {
         </Reveal>
 
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(290px,1fr))', gap:'20px' }}>
-          {features.map((f, i) => (
-            <FeatureCard key={f.title} {...f} delay={(i % 4) * 80} />
-          ))}
+          {features.map((f, i) => {
+            const colors = ['blue', 'purple', 'green', 'orange', 'red'];
+            return <FeatureCard key={f.title} {...f} delay={(i % 4) * 80} color={colors[i % colors.length]} />
+          })}
         </div>
       </div>
     </section>
@@ -401,7 +408,7 @@ const AboutSection = () => {
           </Reveal>
 
           <Reveal delay={100}>
-            <GlassCard style={{ padding: '32px' }}>
+            <GlassCard glowColor="purple" style={{ padding: '32px' }}>
               {highlights.map((h, i) => (
                 <div key={h.title} style={{ paddingTop:'18px', paddingBottom:'18px',
                   borderBottom: i < highlights.length-1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
@@ -424,15 +431,49 @@ const AboutSection = () => {
 };
 
 /* ─────────────────────────────────────────────────────────────
+   STATISTICS SECTION
+   ───────────────────────────────────────────────────────────── */
+const StatsSection = () => {
+  const stats = [
+    { value: '< 100ms', label: 'Average WebRTC Latency', color: 'green' },
+    { value: '100%', label: 'P2P Privacy Guarantee', color: 'blue' },
+    { value: '10x', label: 'Faster than HTTP polling', color: 'orange' },
+    { value: 'Zero', label: 'Data Tracking or Ads', color: 'purple' },
+  ];
+
+  return (
+    <section id="stats" style={{ position:'relative', zIndex:10, paddingTop:'60px', paddingBottom:'60px' }}>
+      <div style={{ maxWidth:'1200px', margin:'0 auto',
+        paddingLeft:'clamp(24px,8vw,120px)', paddingRight:'clamp(24px,8vw,120px)' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:'20px' }}>
+          {stats.map((s, i) => (
+            <Reveal key={s.label} delay={i * 100}>
+              <GlassCard glowColor={s.color} style={{ padding: '40px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize:'42px', fontWeight:'700', color:'#fff', marginBottom:'8px', letterSpacing:'-0.03em', textShadow: '0 4px 15px rgba(0,0,0,0.3)' }}>
+                  {s.value}
+                </div>
+                <div style={{ fontSize:'15px', color:'rgba(255,255,255,0.7)', fontWeight:'500' }}>
+                  {s.label}
+                </div>
+              </GlassCard>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
    FOUNDER SECTION
    ───────────────────────────────────────────────────────────── */
 const FounderSection = () => (
   <section id="founder" style={{ position:'relative', zIndex:10,
-    paddingTop:'120px', paddingBottom:'120px' }}>
+    paddingTop:'120px', paddingBottom:'60px' }}>
     <div style={{ maxWidth:'1200px', margin:'0 auto',
       paddingLeft:'clamp(24px,8vw,120px)', paddingRight:'clamp(24px,8vw,120px)' }}>
 
-      <GlassCard style={{ display:'flex', gap:'60px', alignItems:'center', flexWrap:'wrap', padding: '48px' }}>
+      <GlassCard glowColor="orange" style={{ display:'flex', gap:'60px', alignItems:'center', flexWrap:'wrap', padding: '48px' }}>
 
         {/* Photo — real founder image */}
         <Reveal y={20} delay={0} style={{ flexShrink:0 }}>
@@ -663,6 +704,7 @@ const LandingPage = () => {
         <FeaturesSection />
         <ArchSection />
         <AboutSection />
+        <StatsSection />
         <FounderSection />
         <CTASection />
       </main>
