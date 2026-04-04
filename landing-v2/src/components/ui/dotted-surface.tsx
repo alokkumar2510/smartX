@@ -25,9 +25,12 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x05050A, 2000, 10000);
 
+    const initialWidth = containerRef.current.clientWidth || window.innerWidth;
+    const initialHeight = containerRef.current.clientHeight || window.innerHeight;
+
     const camera = new THREE.PerspectiveCamera(
       60,
-      window.innerWidth / window.innerHeight,
+      initialWidth / initialHeight,
       1,
       10000,
     );
@@ -38,7 +41,7 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
       antialias: true,
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // optimize
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(initialWidth, initialHeight);
     renderer.setClearColor(scene.fog.color, 0);
 
     containerRef.current.appendChild(renderer.domElement);
@@ -105,13 +108,17 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
       count += 0.05; // Make the wave slower
     };
 
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (!entries || !entries.length) return;
+      const { width, height } = entries[0].contentRect;
+      if (width && height) {
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      }
+    });
 
-    window.addEventListener('resize', handleResize);
+    resizeObserver.observe(containerRef.current);
     animate();
 
     sceneRef.current = {
@@ -124,7 +131,7 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
     };
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
 
       if (sceneRef.current) {
         cancelAnimationFrame(sceneRef.current.animationId);
@@ -156,7 +163,7 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
       ref={containerRef}
       style={{
         pointerEvents: 'none',
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
         zIndex: 0,
         ...props.style
