@@ -21,6 +21,7 @@ import { requestBackgroundSync } from './lib/serviceWorkerRegistration';
 
 // Components
 import CyberBg from './components/CyberBg';
+import { DottedSurface } from './components/ui/dotted-surface';
 import WelcomeScreen from './components/WelcomeScreen';
 import AuthScreen, { ResetPasswordPage, EmailVerificationBanner } from './components/AuthScreen';
 import NetworkBanner from './components/NetworkBanner';
@@ -1497,14 +1498,7 @@ const ChatDashboard = () => {
     <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden"
          style={{ background: 'var(--bg-base)' }}>
       {/* Glow blobs */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div style={{ position:'absolute', top:'20%', left:'40%', width:500, height:500,
-          background:'radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%)',
-          transform:'translate(-50%,-50%)' }} />
-        <div style={{ position:'absolute', bottom:'20%', right:'25%', width:350, height:350,
-          background:'radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%)',
-          transform:'translate(50%,50%)' }} />
-      </div>
+      <DottedSurface style={{ position: 'absolute' }} className="opacity-30 mix-blend-screen" />
 
       <motion.div
         initial={{ opacity: 0, y: 24 }}

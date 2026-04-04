@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { HeroFuturistic } from './ui/hero-futuristic';
 import { SpotlightCard } from './ui/spotlight-card';
+import { DottedSurface } from './ui/dotted-surface';
 
 /* ── App URL — update here if domain changes ── */
 const APP_URL = 'https://smartx.alokkumarsahu.in';
@@ -239,30 +240,7 @@ const HeroSection = () => {
   return <HeroFuturistic />;
 };
 
-/* ─────────────────────────────────────────────────────────────
-   GLOBAL VIDEO BACKGROUND — only shows after scrolling past hero
-   ───────────────────────────────────────────────────────────── */
-const VideoBg = ({ hidden }) => {
-  const GLOBAL_VIDEO_URL = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260330_145725_08886141-ed95-4a8e-8d6d-b75eaadce638.mp4';
-  
-  if (hidden) return null;
-  
-  return (
-    <div style={{ position:'fixed', inset:0, zIndex:0, pointerEvents:'none', overflow:'hidden', background:'#05050A' }}>
-      <video style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover', opacity: 0.65, mixBlendMode: 'screen'
-        }}
-        src={GLOBAL_VIDEO_URL} autoPlay muted loop playsInline preload="auto" aria-hidden="true"
-      />
-      {/* Delicate Gradient overlay — keeps page readable but doesn't crush to black */}
-      <div style={{
-        position:'absolute', inset:0,
-        background:'linear-gradient(to bottom, rgba(10,5,20,0.4) 0%, rgba(5,0,10,0.8) 100%)',
-      }} />
-    </div>
-  );
-};
+
 
 const FeaturesSection = () => {
   const features = [
@@ -692,8 +670,8 @@ const LandingPage = () => {
         }
       `}</style>
 
-      {/* Fixed video background — only after scrolling past hero */}
-      {scrolled && <VideoBg />}
+      {/* Fixed dotted surface background — only after scrolling past hero */}
+      {scrolled && <DottedSurface style={{ background: '#05050A' }} />}
 
       {/* Sticky navbar */}
       <Navbar scrolled={scrolled}/>
