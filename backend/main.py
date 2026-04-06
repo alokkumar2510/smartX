@@ -59,7 +59,7 @@ app = FastAPI(
     description="Advanced TCP/UDP Chat System Backend with AI Engine, WebRTC & Adaptive Routing"
 )
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {"message": "SmartChat X Backend is Live", "version": "3.0"}
 
