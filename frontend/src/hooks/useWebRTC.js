@@ -43,15 +43,22 @@ import { supabase } from '../lib/supabase';
    Using multiple STUN ensures at least one is reachable globally.
 ────────────────────────────────────────────────────────────────── */
 const ICE_SERVERS = [
+  // Multiple STUN servers for redundancy
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:global.stun.twilio.com:3478' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  // --- Open Relay TURN (free, last resort) ---
+  // NOTE: If you want reliable calls in production, replace these with
+  // your own TURN server or a service like Metered.ca / Twilio.
   {
     urls: [
       'turn:openrelay.metered.ca:80',
       'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:80?transport=tcp',
     ],
     username: 'openrelayproject',
     credential: 'openrelayproject',
@@ -125,7 +132,7 @@ async function saveCallRecord({ fromId, toId, callType, duration, status }) {
    Hook: useWebRTC
    Production-grade P2P calling with full lifecycle management.
 ════════════════════════════════════════════════════════════════ */
-export function useWebRTC(currentUser, _token, ws) {
+export function useWebRTC(currentUser, _token, ws, networkMode = 'high') {
 
   // ── Call State ────────────────────────────────────────────────
   const [callState, setCallState] = useState(null);
@@ -139,7 +146,8 @@ export function useWebRTC(currentUser, _token, ws) {
 
   // ── Media State ───────────────────────────────────────────────
   const [localStream, setLocalStream]       = useState(null);
-  const [remoteStreams, setRemoteStreams]    = useState(new Map());
+  // IMPORTANT: plain object, NOT Map — CallModal uses Object.entries(remoteStreams)
+  const [remoteStreams, setRemoteStreams]    = useState({});
   const [isMuted, setIsMuted]               = useState(false);
   const [isCameraOff, setIsCameraOff]       = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -182,11 +190,13 @@ export function useWebRTC(currentUser, _token, ws) {
   const lastBytesRef        = useRef({ sent: 0, received: 0, time: Date.now() });
   const cleanupGuardRef     = useRef(false);    // Prevent double cleanup
   const currentUserRef      = useRef(currentUser);
+  const networkModeRef      = useRef(networkMode);
 
   // Keep refs in sync — ONLY update when value is non-null
   useEffect(() => { if (ws) wsRef.current = ws; }, [ws]);
   useEffect(() => { callStateRef.current = callState; }, [callState]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => { networkModeRef.current = networkMode; }, [networkMode]);
 
   // ── Device Enumeration ────────────────────────────────────────
   const refreshDevices = useCallback(async () => {
@@ -366,7 +376,7 @@ export function useWebRTC(currentUser, _token, ws) {
     }
 
     // Reset state
-    setRemoteStreams(new Map());
+    setRemoteStreams({});
     setDataMessages([]);
     pendingIceRef.current = [];
 
@@ -451,7 +461,7 @@ export function useWebRTC(currentUser, _token, ws) {
     pc.onicegatheringstatechange = () =>
       console.info('[WebRTC] ICE gathering:', pc.iceGatheringState);
 
-    // Remote tracks → build MediaStream
+    // Remote tracks → build MediaStream (plain object, not Map)
     let remoteStream = new MediaStream();
     pc.ontrack = ({ track, streams }) => {
       console.info('[WebRTC] Remote track received:', track.kind);
@@ -459,14 +469,14 @@ export function useWebRTC(currentUser, _token, ws) {
 
       // Ensure tracks stay alive when re-added
       track.onended = () => console.warn('[WebRTC] Remote track ended:', track.kind);
-      track.onmute = () => console.warn('[WebRTC] Remote track muted:', track.kind);
+      track.onmute  = () => console.warn('[WebRTC] Remote track muted:', track.kind);
       track.onunmute = () => console.info('[WebRTC] Remote track unmuted:', track.kind);
 
       if (src) {
-        setRemoteStreams(new Map([[String(targetUserId), src]]));
+        setRemoteStreams({ [String(targetUserId)]: src });
       } else {
         remoteStream.addTrack(track);
-        setRemoteStreams(new Map([[String(targetUserId), remoteStream]]));
+        setRemoteStreams({ [String(targetUserId)]: remoteStream });
       }
     };
 
@@ -549,13 +559,36 @@ export function useWebRTC(currentUser, _token, ws) {
       ...(deviceIds.microphone ? { deviceId: { exact: deviceIds.microphone } } : {}),
     };
 
-    const video = callType === 'video' ? {
-      width:     { ideal: 1280, max: 1920 },
-      height:    { ideal: 720,  max: 1080 },
-      frameRate: { ideal: 30,   max: 60   },
-      facingMode: 'user',
-      ...(deviceIds.camera ? { deviceId: { exact: deviceIds.camera } } : {}),
-    } : false;
+    const currentNetMode = networkModeRef.current;
+
+    let video = false;
+    if (callType === 'video') {
+      if (currentNetMode === 'low') {
+        video = {
+          width:     { ideal: 320, max: 640 },
+          height:    { ideal: 240, max: 480 },
+          frameRate: { ideal: 15, max: 24 },
+          facingMode: 'user',
+          ...(deviceIds.camera ? { deviceId: { exact: deviceIds.camera } } : {}),
+        };
+      } else if (currentNetMode === 'medium') {
+        video = {
+          width:     { ideal: 640, max: 1280 },
+          height:    { ideal: 480, max: 720 },
+          frameRate: { ideal: 24, max: 30 },
+          facingMode: 'user',
+          ...(deviceIds.camera ? { deviceId: { exact: deviceIds.camera } } : {}),
+        };
+      } else {
+        video = {
+          width:     { ideal: 1280, max: 1920 },
+          height:    { ideal: 720,  max: 1080 },
+          frameRate: { ideal: 30,   max: 60 },
+          facingMode: 'user',
+          ...(deviceIds.camera ? { deviceId: { exact: deviceIds.camera } } : {}),
+        };
+      }
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio, video });
@@ -1088,12 +1121,18 @@ export function useWebRTC(currentUser, _token, ws) {
   }, [cleanup, drainPendingIce, wsSend, clearCallTimeout]);
 
   // ── Attach / re-attach WS listener ───────────────────────────
+  // Use a ref so the listener closure always has the latest handler
+  // without needing to re-attach on every render (prevents missed events).
+  const handleWsMessageRef = useRef(handleWsMessage);
+  useEffect(() => { handleWsMessageRef.current = handleWsMessage; }, [handleWsMessage]);
+
   useEffect(() => {
     const socket = ws;
     if (!socket) return;
-    socket.addEventListener('message', handleWsMessage);
-    return () => socket.removeEventListener('message', handleWsMessage);
-  }, [ws, handleWsMessage]);
+    const stableHandler = (e) => handleWsMessageRef.current(e);
+    socket.addEventListener('message', stableHandler);
+    return () => socket.removeEventListener('message', stableHandler);
+  }, [ws]);
 
   // ── Cleanup on unmount (NOT on ws change) ─────────────────────
   useEffect(() => {

@@ -7,6 +7,9 @@ interface GlowCardProps {
   size?: 'sm' | 'md' | 'lg';
   width?: string | number;
   height?: string | number;
+  style?: React.CSSProperties;
+  onMouseEnter?: React.MouseEventHandler<HTMLDivElement>;
+  onMouseLeave?: React.MouseEventHandler<HTMLDivElement>;
   customSize?: boolean; // When true, ignores size prop and uses width/height or className
 }
 
@@ -31,6 +34,9 @@ const GlowCard: React.FC<GlowCardProps> = ({
   size = 'md',
   width,
   height,
+  style = {},
+  onMouseEnter,
+  onMouseLeave,
   customSize = true
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -63,39 +69,44 @@ const GlowCard: React.FC<GlowCardProps> = ({
   };
 
   const getInlineStyles = () => {
-    const baseStyles = {
+    // Extract border radius from style if it exists
+    const borderRadius = style.borderRadius || style.borderTopLeftRadius || '1rem';
+    
+    const baseStyles: any = {
       '--base': base,
       '--spread': spread,
-      '--radius': '14',
-      '--border': '3',
-      '--backdrop': 'hsl(0 0% 60% / 0.12)',
-      '--backup-border': 'var(--backdrop)',
-      '--size': '200',
+      '--radius': borderRadius,
+      '--border': '1',
+      '--backdrop': 'rgba(15, 12, 30, 0.4)',
+      '--backup-border': 'rgba(255, 255, 255, 0.1)',
+      '--size': '250',
       '--outer': '1',
-      '--border-size': 'calc(var(--border, 2) * 1px)',
-      '--spotlight-size': 'calc(var(--size, 150) * 1px)',
+      '--border-size': 'calc(var(--border, 1) * 1px)',
+      '--spotlight-size': 'calc(var(--size, 250) * 1px)',
       '--hue': 'calc(var(--base) + (var(--xp, 0) * var(--spread, 0)))',
       backgroundImage: `radial-gradient(
         var(--spotlight-size) var(--spotlight-size) at
         calc(var(--x, 0) * 1px)
         calc(var(--y, 0) * 1px),
-        hsl(var(--hue, 210) calc(var(--saturation, 100) * 1%) calc(var(--lightness, 70) * 1%) / var(--bg-spot-opacity, 0.1)), transparent
+        hsl(var(--hue, 210) 100% 70% / 0.1), transparent 100%
       )`,
-      backgroundColor: 'var(--backdrop, transparent)',
-      backgroundSize: 'calc(100% + (2 * var(--border-size))) calc(100% + (2 * var(--border-size)))',
+      backgroundColor: 'var(--backdrop)',
+      backgroundSize: '100% 100%',
       backgroundPosition: '50% 50%',
       backgroundAttachment: 'fixed',
       border: 'var(--border-size) solid var(--backup-border)',
-      position: 'relative' as const,
-      touchAction: 'none' as const,
+      position: 'relative',
+      touchAction: 'none',
+      borderRadius: borderRadius,
+      ...style
     };
 
     // Add width and height if provided
     if (width !== undefined) {
-       (baseStyles as any).width = typeof width === 'number' ? `${width}px` : width;
+       baseStyles.width = typeof width === 'number' ? `${width}px` : width;
     }
     if (height !== undefined) {
-       (baseStyles as any).height = typeof height === 'number' ? `${height}px` : height;
+       baseStyles.height = typeof height === 'number' ? `${height}px` : height;
     }
 
     return baseStyles;
@@ -109,7 +120,7 @@ const GlowCard: React.FC<GlowCardProps> = ({
       position: absolute;
       inset: calc(var(--border-size) * -1);
       border: var(--border-size) solid transparent;
-      border-radius: calc(var(--radius) * 1px);
+      border-radius: var(--radius);
       background-attachment: fixed;
       background-size: calc(100% + (2 * var(--border-size))) calc(100% + (2 * var(--border-size)));
       background-repeat: no-repeat;
@@ -117,6 +128,7 @@ const GlowCard: React.FC<GlowCardProps> = ({
       mask: linear-gradient(transparent, transparent), linear-gradient(white, white);
       mask-clip: padding-box, border-box;
       mask-composite: intersect;
+      z-index: 1;
     }
     
     [data-glow]::before {
@@ -124,9 +136,9 @@ const GlowCard: React.FC<GlowCardProps> = ({
         calc(var(--spotlight-size) * 0.75) calc(var(--spotlight-size) * 0.75) at
         calc(var(--x, 0) * 1px)
         calc(var(--y, 0) * 1px),
-        hsl(var(--hue, 210) calc(var(--saturation, 100) * 1%) calc(var(--lightness, 50) * 1%) / var(--border-spot-opacity, 1)), transparent 100%
+        hsl(var(--hue, 210) 100% 70% / 1), transparent 100%
       );
-      filter: brightness(2);
+      filter: brightness(1.5);
     }
     
     [data-glow]::after {
@@ -134,7 +146,7 @@ const GlowCard: React.FC<GlowCardProps> = ({
         calc(var(--spotlight-size) * 0.5) calc(var(--spotlight-size) * 0.5) at
         calc(var(--x, 0) * 1px)
         calc(var(--y, 0) * 1px),
-        hsl(0 100% 100% / var(--border-light-opacity, 1)), transparent 100%
+        rgba(255, 255, 255, 0.4), transparent 100%
       );
     }
     
@@ -143,17 +155,12 @@ const GlowCard: React.FC<GlowCardProps> = ({
       inset: 0;
       will-change: filter;
       opacity: var(--outer, 1);
-      border-radius: calc(var(--radius) * 1px);
+      border-radius: var(--radius);
       border-width: calc(var(--border-size) * 20);
       filter: blur(calc(var(--border-size) * 10));
       background: none;
       pointer-events: none;
       border: none;
-    }
-    
-    [data-glow] > [data-glow]::before {
-      inset: -10px;
-      border-width: 10px;
     }
   `;
 
@@ -163,23 +170,20 @@ const GlowCard: React.FC<GlowCardProps> = ({
       <div
         ref={cardRef}
         data-glow
-        style={getInlineStyles() as React.CSSProperties}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        style={getInlineStyles()}
         className={`
           ${getSizeClasses()}
-          ${!customSize ? 'aspect-[3/4]' : ''}
-          rounded-2xl 
+          ${!customSize ? 'aspect-[3/4] p-4 gap-4 grid grid-rows-[1fr_auto]' : ''}
           relative 
-          grid 
-          grid-rows-[1fr_auto] 
           shadow-[0_1rem_2rem_-1rem_black] 
-          p-4 
-          gap-4 
-          backdrop-blur-[5px]
+          backdrop-blur-[12px]
           ${className}
         `}
       >
         <div ref={innerRef} data-glow></div>
-        <div className="relative z-10 w-full h-full flex flex-col">{children}</div>
+        <div className="relative z-10 w-full h-full">{children}</div>
       </div>
     </>
   );

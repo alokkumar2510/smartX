@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 75 --no-access-log --log-level warning"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0

@@ -97,6 +97,21 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 @app.on_event("startup")
 async def startup():
+    import sqlite3 as _sqlite3, os as _os
+    # Enable WAL mode for SQLite so concurrent reads don't block writes
+    _sqlite_path = _os.path.join(_os.path.dirname(__file__), "smartchat.db")
+    try:
+        _conn = _sqlite3.connect(_sqlite_path)
+        _conn.execute("PRAGMA journal_mode=WAL")
+        _conn.execute("PRAGMA synchronous=NORMAL")   # faster fsync, still safe
+        _conn.execute("PRAGMA cache_size=-32000")    # 32 MB page cache
+        _conn.execute("PRAGMA temp_store=MEMORY")
+        _conn.execute("PRAGMA mmap_size=134217728")  # 128 MB mmap
+        _conn.commit()
+        _conn.close()
+        logger.info("✅ SQLite WAL mode enabled")
+    except Exception as _e:
+        logger.warning(f"WAL pragma skipped (PostgreSQL?): {_e}")
     init_db()
     # Create / migrate DMs table
     try:
@@ -716,27 +731,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     protocol = ai_engine.select_protocol(msg)
                     logger.info(f"🌐 Auto-routed → {protocol} for {username}'s message")
 
-                # ── AI: Toxicity Detection ─────────────
-                toxicity_result = None
-                if content:
-                    toxicity_result = ai_engine.toxicity_detector.analyze(content)
-                    if toxicity_result["toxic"]:
-                        logger.warning(f"⚠️ Toxic message from {username}: score={toxicity_result['score']}")
-                        # Send warning to sender
-                        await websocket.send_text(json.dumps({
-                            "type": "toxicity_warning",
-                            "score": toxicity_result["score"],
-                            "severity": toxicity_result["severity"],
-                            "flags": toxicity_result["flags"],
-                            "message": "⚠️ Your message may contain harmful content.",
-                        }))
-
-                # ── AI: Smart Reply Suggestions ────────
-                smart_replies = []
-                if content:
-                    smart_replies = ai_engine.smart_reply.generate(content)
-
-                # Step 1: Save to SQLite
+                # Step 1: Save to DB immediately — don't wait for AI
                 msg_id = 0
                 db = None
                 try:
@@ -755,10 +750,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     msg_id = int(time.time() * 1000) % 1000000
                 finally:
                     if db:
-                        try:
-                            db.close()
-                        except Exception:
-                            pass
+                        try: db.close()
+                        except Exception: pass
 
                 message_data = {
                     "id": msg_id,
@@ -773,24 +766,49 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "read": 0,
                     "dropped": 0,
                 }
-                # Include reply_to data if replying
                 if msg.get("reply_to"):
                     message_data["reply_to"] = msg["reply_to"]
 
-                # Step 2: Send confirmation + AI data to sender
+                # Step 2: Send confirmation immediately (no AI wait)
                 await websocket.send_text(json.dumps({
                     **message_data,
                     "type": "message_sent",
-                    "smart_replies": smart_replies,
-                    "toxicity": toxicity_result,
                     "auto_protocol": protocol if msg.get("protocol") == "AUTO" else None,
                 }))
 
-                # Step 3: Route through TCP/UDP network layer
-                try:
-                    await manager.simulate_send(message_data, user_id)
-                except Exception as e:
-                    logger.error(f"[WS] Network bridge error: {e}")
+                # Step 3: Route through TCP/UDP and run AI in background
+                # IMPORTANT: fire-and-forget — never await these in the hot path
+                async def _background_tasks(ws=websocket, md=message_data,
+                                            uid=user_id, uname=username, c=content):
+                    # 3a. Network bridge delivery
+                    try:
+                        await manager.simulate_send(md, uid)
+                    except Exception as _e:
+                        logger.error(f"[WS] Network bridge error: {_e}")
+                    # 3b. AI: toxicity + smart replies (non-blocking)
+                    if c:
+                        try:
+                            tox = ai_engine.toxicity_detector.analyze(c)
+                            replies = ai_engine.smart_reply.generate(c)
+                            if tox["toxic"]:
+                                logger.warning(f"⚠️ Toxic msg from {uname}: score={tox['score']}")
+                                await ws.send_text(json.dumps({
+                                    "type": "toxicity_warning",
+                                    "score": tox["score"],
+                                    "severity": tox["severity"],
+                                    "flags": tox["flags"],
+                                    "message": "⚠️ Your message may contain harmful content.",
+                                }))
+                            if replies:
+                                await ws.send_text(json.dumps({
+                                    "type": "smart_replies",
+                                    "message_id": md["id"],
+                                    "replies": replies,
+                                }))
+                        except Exception as _e:
+                            logger.debug(f"AI task error: {_e}")
+
+                asyncio.create_task(_background_tasks())
 
                 logger.info(f"📨 [{protocol}] {username}: "
                             f"{content[:50]}{'...' if len(content)>50 else ''}")
@@ -1107,31 +1125,35 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
             # ═══════════════════════════════════════════
             #  HANDLE: Call Signaling (Voice/Video)
             # ═══════════════════════════════════════════
-            elif event_type in ["call_offer", "call_answer", "call_reject", "call_end", "call_ice", "group_call_offer"]:
+            elif event_type in ["call_offer", "call_answer", "call_reject", "call_busy", "call_end", "call_ice", "group_call_offer"]:
                 target_id = msg.get("target_user_id")
                 if target_id:
-                    payload = dict(msg)
-                    payload.pop("target_user_id", None)
-                    payload["from_user_id"] = user_id
-                    payload["from_username"] = username
-                    
-                    if event_type == "call_offer" or event_type == "group_call_offer":
-                        payload["type"] = "incoming_call"
-                        if "call_type" not in payload:
-                            payload["call_type"] = "voice"
-                        logger.info(f"📞 {payload['call_type'].upper()} call: {username} -> user#{target_id}")
+                    # NOTE: Use 'sig_payload' to avoid overwriting the JWT 'payload' decoded above
+                    sig_payload = dict(msg)
+                    sig_payload.pop("target_user_id", None)
+                    sig_payload["from_user_id"] = user_id
+                    sig_payload["from_username"] = username
+
+                    if event_type in ("call_offer", "group_call_offer"):
+                        sig_payload["type"] = "incoming_call"
+                        if "call_type" not in sig_payload:
+                            sig_payload["call_type"] = "voice"
+                        logger.info(f"📞 {sig_payload['call_type'].upper()} call: {username} → user#{target_id}")
                     elif event_type == "call_answer":
-                        payload["type"] = "call_accepted"
+                        sig_payload["type"] = "call_accepted"
+                        logger.info(f"📞 Call accepted by {username}")
                     elif event_type == "call_reject":
-                        payload["type"] = "call_rejected"
+                        sig_payload["type"] = "call_rejected"
                         logger.info(f"📞 Call rejected by {username}")
+                    elif event_type == "call_busy":
+                        sig_payload["type"] = "call_busy"
                     elif event_type == "call_end":
-                        payload["type"] = "call_ended"
+                        sig_payload["type"] = "call_ended"
                         logger.info(f"📞 Call ended by {username}")
                     elif event_type == "call_ice":
-                        payload["type"] = "call_ice"
-                    
-                    await manager.send_to(target_id, json.dumps(payload))
+                        sig_payload["type"] = "call_ice"
+
+                    await manager.send_to(target_id, json.dumps(sig_payload))
 
             # ═══════════════════════════════════════════
             #  HANDLE: WebRTC Signaling (P2P Data)

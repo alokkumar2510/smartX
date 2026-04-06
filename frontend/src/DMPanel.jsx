@@ -2,13 +2,15 @@
    DMPanel.jsx — Private DM + Call UI (Voice/Video) + AI Chat
    SmartChat X v5.0 — w/ Reactions, Deletion & Search
    ═══════════════════════════════════════════════════════════ */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { playDMSound } from './sounds';
 import { supabase } from './lib/supabase';
 import VoiceRecorder, { VoicePlayer } from './components/VoiceRecorder';
 import FileUpload, { FileMessage } from './components/FileShare';
 import { useNetwork } from './context/NetworkContext';
+import { Virtuoso } from 'react-virtuoso';
+import MessageBubble from './components/MessageBubble';
 
 const API = import.meta.env.VITE_API_URL || `http://${window.location.hostname || '127.0.0.1'}:8000`;
 
@@ -20,40 +22,43 @@ const QUICK_EMOJIS = ['👍','❤️','😂','😮','😢','🔥','🎉','👏']
 
 /* ─── PARTICIPANT VIDEO ───────────────────────────── */
 const ParticipantVideo = ({ stream, isVideo, label, isLocal }) => {
-  const vRef = useRef(null);
-  const aRef = useRef(null);
   const [isActive, setIsActive] = useState(false);
 
-  useEffect(() => {
-    if (vRef.current && stream) vRef.current.srcObject = stream;
-    if (aRef.current && stream && !isLocal) aRef.current.srcObject = stream;
-  }, [stream, isLocal]);
+  // Callback refs: fire synchronously when element mounts, fixing the race
+  // where stream arrives before the video/audio element is in the DOM.
+  const videoRef = useCallback((el) => {
+    if (el && stream) { el.srcObject = stream; el.play().catch(() => {}); }
+  }, [stream]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const audioRef = useCallback((el) => {
+    if (el && stream && !isLocal) { el.srcObject = stream; el.play().catch(() => {}); }
+  }, [stream, isLocal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!stream || isLocal) return; // Optional: show active for local too
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = ctx.createAnalyser();
+    if (!stream || isLocal) return;
+    let ctx, afId;
     try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = ctx.createAnalyser();
       const src = ctx.createMediaStreamSource(stream);
       src.connect(analyser);
-    } catch (e) { return; }
-    analyser.fftSize = 256;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    let afId;
-    const checkActive = () => {
-      analyser.getByteFrequencyData(dataArray);
-      let sum = 0; for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
-      setIsActive(sum > dataArray.length * 15);
-      afId = requestAnimationFrame(checkActive);
-    };
-    checkActive();
-    return () => { cancelAnimationFrame(afId); ctx.close(); };
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const check = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0; for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        setIsActive(sum > dataArray.length * 15);
+        afId = requestAnimationFrame(check);
+      };
+      check();
+    } catch (_) {}
+    return () => { if (afId) cancelAnimationFrame(afId); try { ctx?.close(); } catch (_) {} };
   }, [stream, isLocal]);
 
   return (
     <div className={`relative w-full h-full rounded-xl overflow-hidden bg-[#111] border-2 transition-all duration-300 ${isActive ? 'border-neon-green shadow-[0_0_20px_rgba(0,255,136,0.4)] scale-[1.02]' : 'border-[rgba(255,255,255,0.05)]'}`}>
-      <video ref={vRef} autoPlay playsInline muted={isLocal} className={`w-full h-full object-cover ${!isVideo && 'hidden'}`} />
-      {!isLocal && <audio ref={aRef} autoPlay playsInline className="hidden" />}
+      <video ref={videoRef} autoPlay playsInline muted={isLocal} className={`w-full h-full object-cover ${!isVideo && 'hidden'}`} />
+      {!isLocal && <audio ref={audioRef} autoPlay playsInline className="hidden" />}
       {!isVideo && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0a0a16]">
           <div className={`text-4xl mb-3 ${isActive ? 'text-neon-green animate-pulse' : 'text-white/30'}`}>🎙️</div>
@@ -106,14 +111,17 @@ export const CallModal = ({ callState, localStream, remoteStreams = {}, onAccept
   const isVideo = callState.type === 'video';
   const formatTime = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const remoteUsers = Object.entries(remoteStreams);
-  const allCount = remoteUsers.length + 1; // including local
+  const remoteEntries = remoteStreams instanceof Map
+    ? [...remoteStreams.entries()]
+    : Object.entries(remoteStreams);
+  const allCount = remoteEntries.length + 1; // including local
   // Dynamic layout calculation
   let gridCols = 'grid-cols-1';
   let gridRows = 'grid-rows-1';
   if (allCount === 2) { gridCols = 'grid-cols-1 md:grid-cols-2'; }
   else if (allCount === 3 || allCount === 4) { gridCols = 'grid-cols-2'; gridRows = 'grid-rows-2'; }
   else if (allCount > 4) { gridCols = 'grid-cols-3'; gridRows = 'grid-rows-2'; }
+  const isConnecting = callState.status === 'connecting' || callState.status === 'reconnecting';
 
   return (
     <AnimatePresence>
@@ -157,7 +165,7 @@ export const CallModal = ({ callState, localStream, remoteStreams = {}, onAccept
             {callState.status === 'active' ? (
               <div className={`grid gap-4 w-full h-full ${gridCols} ${gridRows}`}>
                 <ParticipantVideo stream={localStream} isVideo={isVideo && !isVideoDisabled} label="You" isLocal={true} />
-                {remoteUsers.map(([id, stream]) => (
+                {remoteEntries.map(([id, stream]) => (
                    <ParticipantVideo key={id} stream={stream} isVideo={isVideo} label="Participant" isLocal={false} />
                 ))}
               </div>
@@ -176,7 +184,13 @@ export const CallModal = ({ callState, localStream, remoteStreams = {}, onAccept
                   >
                     {isVideo ? '📹' : '📞'}
                   </motion.div>
-                  <p className="text-white/40 font-mono text-sm">{isVideo ? 'Video Call' : 'Voice Call'} - WebRTC P2P</p>
+                  {isConnecting ? (
+                    <p className="text-neon-cyan/70 font-mono text-sm animate-pulse">
+                      {callState.status === 'reconnecting' ? '🔄 Reconnecting...' : '⚡ Establishing P2P connection...'}
+                    </p>
+                  ) : (
+                    <p className="text-white/40 font-mono text-sm">{isVideo ? 'Video Call' : 'Voice Call'} - WebRTC P2P</p>
+                  )}
                 </div>
               </div>
             )}
@@ -281,11 +295,7 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const chatEnd = useRef(null);
-  const chatContainer = useRef(null);
   const typingTimeout = useRef(null);
-  const isAtBottom = useRef(true); // Track if user is scrolled to bottom
-  const prevScrollHeight = useRef(0); // For preserving scroll when loading older msgs
 
   // Seen-message dedup guard (prevents doubles from WS + history overlap)
   const seenIds = useRef(new Set());
@@ -317,8 +327,6 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
   useEffect(() => {
     if (!targetUser) return;
     seenIds.current = new Set();
-    // Reset scroll tracking — new conversation should always start at the bottom
-    isAtBottom.current = true;
     setMessages([]); // Clear stale messages immediately to prevent old chat flash
 
     if (ws?.readyState === 1) {
@@ -419,45 +427,7 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
     return () => ws.removeEventListener('message', handler);
   }, [ws, targetUser?.id, currentUser?.id]);
 
-  // Smart auto-scroll: only scroll to bottom if user is already near bottom
-  useEffect(() => {
-    const el = chatContainer.current;
-    if (!el) return;
-
-    if (loadingMore) {
-      // After loading older messages, restore scroll position to prevent jump
-      const newScrollHeight = el.scrollHeight;
-      el.scrollTop = newScrollHeight - prevScrollHeight.current;
-    } else if (isAtBottom.current) {
-      // Only auto-scroll if user was at (or near) the bottom
-      chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, loadingMore]);
-
-  // Infinite scroll — load older on scroll to top + track if user is at bottom
-  const handleScroll = () => {
-    const el = chatContainer.current;
-    if (!el) return;
-
-    // Track whether user is near the bottom (within 80px)
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    isAtBottom.current = distanceFromBottom < 80;
-
-    // Load older messages when scrolled near the top
-    if (!loadingMore && hasMore && el.scrollTop < 80 && messages.length > 0) {
-      prevScrollHeight.current = el.scrollHeight; // Save before loading
-      setLoadingMore(true);
-      const oldestId = messages[0]?.id;
-      if (ws?.readyState === 1) {
-        ws.send(JSON.stringify({
-          type: 'get_dm_history',
-          target_user_id: targetUser.id,
-          before_id: oldestId,
-          limit: 50,
-        }));
-      }
-    }
-  };
+  // Auto-scroll is handled natively by Virtuoso (followOutput)
 
   // Typing indicator sender
   const handleInputChange = (e) => {
@@ -673,183 +643,72 @@ export const DMPanel = ({ targetUser, currentUser, ws, connections, blocks, onCl
       )}
 
       {/* Messages */}
-      <div
-        ref={chatContainer}
-        onScroll={handleScroll}
-        className="flex-1 p-4 space-y-3"
-        style={{
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          minHeight: 0,
-          scrollBehavior: 'auto',
-          WebkitOverflowScrolling: 'touch',
+      <Virtuoso
+        className="flex-1 w-full"
+        data={messages}
+        initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+        followOutput="smooth"
+        startReached={() => {
+          if (!loadingMore && hasMore && messages.length > 0) {
+            setLoadingMore(true);
+            ws?.send(JSON.stringify({
+              type: 'get_dm_history',
+              target_user_id: targetUser.id,
+              before_id: messages[0]?.id,
+              limit: 50,
+            }));
+          }
         }}
-      >
-        {/* Loading more indicator */}
-        {loadingMore && (
-          <div className="text-center py-2">
-            <motion.p animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1 }} className="text-[10px] font-mono text-neon-cyan/40">Loading older messages...</motion.p>
-          </div>
-        )}
-        {!hasMore && messages.length > 0 && (
-          <div className="text-center py-2">
-            <p className="text-[9px] font-mono text-white/10">🔒 Start of conversation</p>
-          </div>
-        )}
-        {messages.length === 0 && (
-          <div className="text-center mt-8">
-            <p className="text-3xl mb-2">🔒</p>
-            <p className="text-[10px] font-mono text-white/20">Private conversation with {targetUser.username}</p>
-            <p className="text-[9px] font-mono text-white/10 mt-1">Only you two can see these messages</p>
-          </div>
-        )}
-        {messages.map((msg, i) => {
-          const isOwn = msg.sender_id === currentUser?.id;
-          const ctype = msg.content_type;
-          const isDeleted = msg.deleted === 1 || msg.deleted === true;
-          const reactions = msg.reactions
-            ? (typeof msg.reactions === 'string' ? JSON.parse(msg.reactions) : msg.reactions)
-            : {};
-          const hasReactions = Object.keys(reactions).length > 0;
-
-          return (
-            <motion.div
-              key={msg.id || i}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group relative`}
-              style={{ marginBottom: hasReactions ? '14px' : undefined }}
-            >
-              {/* Render voice messages */}
-              {!isDeleted && ctype === 'voice' ? (
-                <VoicePlayer url={msg.voice_url} isOwn={isOwn} duration={msg.voice_duration} />
-              ) : !isDeleted && ctype === 'file' ? (
-                <FileMessage url={msg.file_url} name={msg.file_name} size={msg.file_size} isOwn={isOwn} />
-              ) : (
-                <div className="flex flex-col" style={{ maxWidth: '85%', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
-                  <div
-                    className={`px-3 py-2 rounded-2xl ${isOwn ? 'rounded-br-md' : 'rounded-bl-md'} relative`}
-                    style={{
-                      background: isDeleted ? 'rgba(255,255,255,0.04)' : isOwn ? 'var(--accent)' : 'var(--bg-hover)',
-                      boxShadow: isOwn && !isDeleted ? '0 2px 12px rgba(99,102,241,0.25)' : 'none',
-                      border: isDeleted ? '1px dashed rgba(255,255,255,0.1)' : 'none',
-                    }}>
-                    {msg.reply_to && !isDeleted && (
-                      <div className="text-[9px] border-l-2 pl-2 mb-1 italic opacity-60"
-                           style={{ borderColor: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--accent)', color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}>
-                        ↩ Replying…
-                      </div>
-                    )}
-                    {!isOwn && !isDeleted && <p className="text-[9px] font-medium mb-0.5" style={{ color: 'var(--accent)' }}>{msg.sender_username}</p>}
-                    {isDeleted ? (
-                      <p className="text-[10px] italic" style={{ color: 'rgba(255,255,255,0.25)' }}>🗑️ Message deleted</p>
-                    ) : (
-                      <p className="text-xs leading-relaxed" style={{ color: isOwn ? '#fff' : 'var(--text-1)', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{msg.content}</p>
-                    )}
-                    <div className="flex items-center justify-between mt-1 gap-2">
-                      <p className="text-[8px]" style={{ color: isOwn ? 'rgba(255,255,255,0.5)' : 'var(--text-3)' }}>
-                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                      </p>
-                      <div className="flex items-center gap-1">
-                        {isOwn && !isDeleted && (
-                          <span className="text-[8px]" style={{
-                            color: msg.status === 'read' ? '#a5f3fc'
-                              : msg.status === 'sending' ? 'rgba(255,255,255,0.25)'
-                              : msg.status === 'failed' ? '#f87171'
-                              : 'rgba(255,255,255,0.4)',
-                          }}>
-                            {msg.status === 'failed' ? '✗'
-                              : msg.status === 'sending' ? '⟳'
-                              : msg.status === 'read' ? '✓✓'
-                              : msg.status === 'delivered' ? '✓✓'
-                              : '✓'}
-                          </span>
-                        )}
-                        {!isDeleted && (
-                          <>
-                            {/* Reply */}
-                            <button onClick={() => setReplyTo(msg)}
-                              className="text-[9px] opacity-0 group-hover:opacity-60 transition-opacity hover:opacity-100"
-                              style={{ color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}>↩</button>
-                            {/* React */}
-                            <div className="relative">
-                              <button
-                                className="text-[9px] opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
-                                style={{ color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text-2)' }}
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  const el = e.currentTarget.nextSibling;
-                                  el.style.display = el.style.display === 'flex' ? 'none' : 'flex';
-                                }}
-                              >😊</button>
-                              <div
-                                style={{ display: 'none', position: 'absolute', bottom: '120%', right: 0, zIndex: 99 }}
-                                className="flex gap-1 bg-[#1a1a2e] border border-white/10 rounded-xl p-1.5 shadow-2xl"
-                                onClick={e => e.stopPropagation()}
-                              >
-                                {QUICK_EMOJIS.map(em => (
-                                  <button key={em}
-                                    className="text-sm leading-none hover:scale-125 transition-transform"
-                                    onClick={ev => {
-                                      reactMsg(msg.id, em);
-                                      ev.currentTarget.closest('[style]').style.display = 'none';
-                                    }}
-                                  >{em}</button>
-                                ))}
-                              </div>
-                            </div>
-                            {/* Delete (own only) */}
-                            {isOwn && (
-                              <button
-                                onClick={() => deleteMsg(msg.id)}
-                                className="text-[9px] opacity-0 group-hover:opacity-50 hover:opacity-100 transition-opacity"
-                                style={{ color: '#f87171' }}
-                                title="Delete message"
-                              >🗑</button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Reaction bubbles */}
-                  {hasReactions && (
-                    <div className={`flex flex-wrap gap-1 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                      {Object.entries(reactions).map(([em, users]) => (
-                        <button
-                          key={em}
-                          onClick={() => reactMsg(msg.id, em)}
-                          className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] transition-all hover:scale-110"
-                          style={{
-                            background: users.includes(String(currentUser?.id))
-                              ? 'rgba(99,102,241,0.25)'
-                              : 'rgba(255,255,255,0.07)',
-                            border: users.includes(String(currentUser?.id))
-                              ? '1px solid rgba(99,102,241,0.4)'
-                              : '1px solid rgba(255,255,255,0.1)',
-                          }}
-                        >
-                          <span>{em}</span>
-                          <span style={{ color: 'var(--text-3)' }}>{users.length}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+        components={{
+          Header: () => (
+            <div className="py-4 px-4">
+              {loadingMore && (
+                <div className="text-center py-2">
+                  <motion.p animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1 }} className="text-[10px] font-mono text-neon-cyan/40">
+                    Loading older messages...
+                  </motion.p>
                 </div>
               )}
-            </motion.div>
-          );
-        })}
-        {/* Typing indicator */}
-        {isTyping && (
-          <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
-            <div className="px-3 py-2 rounded-2xl rounded-bl-md" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2 }} className="text-xs text-white/30">typing...</motion.span>
+              {!hasMore && messages.length > 0 && (
+                <div className="text-center py-2">
+                  <p className="text-[9px] font-mono text-white/10">🔒 Start of conversation</p>
+                </div>
+              )}
+              {messages.length === 0 && !loadingMore && (
+                <div className="text-center mt-8">
+                  <p className="text-3xl mb-2">🔒</p>
+                  <p className="text-[10px] font-mono text-white/20">Private conversation with {targetUser.username}</p>
+                  <p className="text-[9px] font-mono text-white/10 mt-1">Only you two can see these messages</p>
+                </div>
+              )}
             </div>
-          </motion.div>
+          ),
+          Footer: () => (
+            <div className="py-2">
+              <AnimatePresence>
+                {isTyping && (
+                  <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex justify-start px-4">
+                    <div className="px-3 py-2 rounded-2xl rounded-bl-md" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.2 }} className="text-xs text-white/30">typing...</motion.span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )
+        }}
+        itemContent={(index, msg) => (
+          <div className="px-4 pb-3">
+            <MessageBubble
+              msg={msg}
+              currentUser={currentUser}
+              reactMsg={reactMsg}
+              deleteMsg={deleteMsg}
+              setReplyTo={setReplyTo}
+            />
+          </div>
         )}
-        <div ref={chatEnd} />
-      </div>
+      />
 
       {/* Reply indicator */}
       <AnimatePresence>
@@ -930,8 +789,6 @@ export const AIChatPanel = ({ ws, onClose }) => {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const chatEnd = useRef(null);
-
   useEffect(() => {
     if (!ws) return;
     const handler = (e) => {
@@ -946,10 +803,6 @@ export const AIChatPanel = ({ ws, onClose }) => {
     ws.addEventListener('message', handler);
     return () => ws.removeEventListener('message', handler);
   }, [ws]);
-
-  useEffect(() => {
-    chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const sendMessage = () => {
     if (!input.trim() || !ws || ws.readyState !== 1 || loading) return;
@@ -990,37 +843,50 @@ export const AIChatPanel = ({ ws, onClose }) => {
         <button onClick={onClose} className="text-white/20 hover:text-white/50 text-xl transition-colors">✕</button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((msg, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-[85%] px-3 py-2 rounded-2xl ${msg.role === 'user' ? 'rounded-br-md' : 'rounded-bl-md'}`}
-              style={{
-                background: msg.role === 'user' ? 'rgba(0,240,255,0.08)' : 'rgba(179,71,234,0.06)',
-                border: `1px solid ${msg.role === 'user' ? 'rgba(0,240,255,0.15)' : 'rgba(179,71,234,0.1)'}`,
-              }}>
-              <p className="text-xs text-white/70 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-            </div>
-          </motion.div>
-        ))}
-        {loading && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-            <div className="px-3 py-2 rounded-2xl rounded-bl-md"
-              style={{ background: 'rgba(179,71,234,0.06)', border: '1px solid rgba(179,71,234,0.1)' }}>
-              <motion.p
-                animate={{ opacity: [0.3, 1, 0.3] }}
-                transition={{ repeat: Infinity, duration: 1.5 }}
-                className="text-xs text-white/40"
-              >🧠 Thinking...</motion.p>
-            </div>
-          </motion.div>
+      <Virtuoso
+        className="flex-1 w-full"
+        data={messages}
+        initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+        followOutput="smooth"
+        itemContent={(i, msg) => (
+          <div className="px-4 pb-3">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div className={`max-w-[85%] px-3 py-2 rounded-2xl ${msg.role === 'user' ? 'rounded-br-md' : 'rounded-bl-md'}`}
+                style={{
+                  background: msg.role === 'user' ? 'rgba(0,240,255,0.08)' : 'rgba(179,71,234,0.06)',
+                  border: `1px solid ${msg.role === 'user' ? 'rgba(0,240,255,0.15)' : 'rgba(179,71,234,0.1)'}`,
+                }}>
+                <p className="text-xs text-white/70 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+              </div>
+            </motion.div>
+          </div>
         )}
-        <div ref={chatEnd} />
-      </div>
+        components={{
+          Header: () => <div className="py-2" />,
+          Footer: () => (
+            <div className="py-2">
+              <AnimatePresence>
+                {loading && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-start px-4">
+                    <div className="px-3 py-2 rounded-2xl rounded-bl-md"
+                      style={{ background: 'rgba(179,71,234,0.06)', border: '1px solid rgba(179,71,234,0.1)' }}>
+                      <motion.p
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        className="text-xs text-white/40"
+                      >🧠 Thinking...</motion.p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )
+        }}
+      />
 
       <div className="p-3 border-t flex gap-2" style={{ borderColor: 'rgba(255,255,255,0.06)', paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
         <input
