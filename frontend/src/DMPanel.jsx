@@ -23,24 +23,33 @@ const QUICK_EMOJIS = ['👍','❤️','😂','😮','😢','🔥','🎉','👏']
 /* ─── PARTICIPANT VIDEO ───────────────────────────── */
 const ParticipantVideo = ({ stream, isVideo, label, isLocal }) => {
   const [isActive, setIsActive] = useState(false);
+  const videoRef = useRef(null);
 
-  // Callback refs: fire synchronously when element mounts, fixing the race
-  // where stream arrives before the video/audio element is in the DOM.
-  const videoRef = useCallback((el) => {
-    if (el && stream) { el.srcObject = stream; el.play().catch(() => {}); }
-  }, [stream]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Safely assign stream to video element when stream or element mounts
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el && stream) {
+      if (el.srcObject !== stream) {
+        el.srcObject = stream;
+      }
+      el.play().catch(e => console.warn('[ParticipantVideo] Play error:', e));
+    }
+  }, [stream]);
 
-  const audioRef = useCallback((el) => {
-    if (el && stream && !isLocal) { el.srcObject = stream; el.play().catch(() => {}); }
-  }, [stream, isLocal]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Audio analyzer to detect speaking activity
   useEffect(() => {
     if (!stream || isLocal) return;
     let ctx, afId;
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       const analyser = ctx.createAnalyser();
-      const src = ctx.createMediaStreamSource(stream);
+      
+      // Filter out video tracks, only use audio to prevent AudioContext errors if only video exists
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) return;
+      
+      const audioStream = new MediaStream(audioTracks);
+      const src = ctx.createMediaStreamSource(audioStream);
       src.connect(analyser);
       analyser.fftSize = 256;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -57,14 +66,21 @@ const ParticipantVideo = ({ stream, isVideo, label, isLocal }) => {
 
   return (
     <div className={`relative w-full h-full rounded-xl overflow-hidden bg-[#111] border-2 transition-all duration-300 ${isActive ? 'border-neon-green shadow-[0_0_20px_rgba(0,255,136,0.4)] scale-[1.02]' : 'border-[rgba(255,255,255,0.05)]'}`}>
-      <video ref={videoRef} autoPlay playsInline muted={isLocal} className={`w-full h-full object-cover ${!isVideo && 'hidden'}`} />
-      {!isLocal && <audio ref={audioRef} autoPlay playsInline className="hidden" />}
+      <video 
+        ref={videoRef} 
+        autoPlay 
+        playsInline 
+        muted={isLocal} 
+        className={`w-full h-full object-cover ${!isVideo && 'hidden'}`} 
+      />
+      
       {!isVideo && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0a0a16]">
           <div className={`text-4xl mb-3 ${isActive ? 'text-neon-green animate-pulse' : 'text-white/30'}`}>🎙️</div>
           <span className="text-white/60 text-sm font-poppins">{label}</span>
         </div>
       )}
+      
       {isVideo && (
         <div className="absolute bottom-2 left-2 px-2 py-1 rounded bg-black/60 backdrop-blur-md">
           <span className="text-white/90 text-xs">{label}</span>
